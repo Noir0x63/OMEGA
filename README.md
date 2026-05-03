@@ -75,7 +75,7 @@ ZTAP is designed for **Zero-Persistence**.
 ### 5. Session Governance & Access Control
 *   **Session Expiry:** All sessions expire after 1 hour, requiring re-authentication.
 *   **Concurrent Limits:** Maximum 2 connections per session ID, 500 total server-wide.
-*   **IP Rate Limiting:** Max 30 connections per minute per IP with exponential backoff bans (up to 10 minutes).
+*   **Session Governance:** 1-hour session expiry and strict concurrent connection limits.
 *   **Admin Route Rotation:** Hourly HMAC-derived admin paths with serverNonce entropy — routes cannot be pre-calculated even with leaked secrets.
 *   **Input Sanitization:** All user-provided fields are validated and stripped of control characters before processing.
 *   **Vault Write Mutex:** Promise-chained serialization prevents race conditions and JSON corruption under concurrent write pressure.
@@ -178,9 +178,9 @@ ZTAP v3.1 introduces a **Native Desktop Client** (Electron) designed to complete
 
 ## ⚖️ License
 
-**ZTAP Public Source License v1.1 (Strict)** — See [LICENSE](LICENSE).
+**GNU General Public License v3.0 (GPLv3)** — See [LICENSE](LICENSE).
 
-Individual, non-commercial use only. Commercial, SaaS, and corporate use strictly prohibited without explicit written permission.
+This project is Free Software: you can redistribute it and/or modify it under the terms of the GNU GPLv3 as published by the Free Software Foundation.
 
 ---
 
@@ -190,4 +190,4 @@ Individual, non-commercial use only. Commercial, SaaS, and corporate use strictl
 ZTAP is built on the principle of **Attack Cost Maximization**. By combining encrypted-at-rest key management, Perfect Forward Secrecy, aggressive memory hygiene, traffic normalization, and adaptive proof-of-work, the infrastructure forces adversaries to expend computational resources they are unlikely to invest for standard interception.
 
 ---
-**Developed and Hardened by Noir0x63** 🔒🎩
+**Developed and Hardened by Eduardo "Noir0x63" Camarillo** 🔒🎩

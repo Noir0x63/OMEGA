@@ -5,7 +5,6 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
-const rateLimit = require('express-rate-limit');
 const cors = require('cors');
 
 let messageVault = [];
@@ -111,7 +110,7 @@ function generateECDHKeyPair() {
 const sessionSockets = new Map();
 const challenges = new Map();
 const activeSessions = new Map();
-const connRateLimit = new Map();
+const wss = new WebSocket.Server({ noServer: true });
 const ipBanList = new Map();
 
 function isSessionExpired(sessionId) {
@@ -206,8 +205,6 @@ const wss = new WebSocket.Server({ noServer: true });
 app.disable('x-powered-by');
 app.set('etag', false);
 app.use(cors());
-
-app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 200, standardHeaders: true, legacyHeaders: false }));
 app.use((req, res, next) => {
     res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' blob: 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss: blob: data:; img-src 'self' data:; media-src 'self' data:; frame-ancestors 'none';");
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -231,37 +228,10 @@ app.use((err, req, res, next) => {
 });
 
 server.on('upgrade', (request, socket, head) => {
-    const ip = request.socket.remoteAddress;
     const now = Date.now();
-
-    if (ipBanList.has(ip) && now < ipBanList.get(ip)) {
-        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
-        socket.destroy();
-        return;
-    }
-
-    const rateEntry = connRateLimit.get(ip) || { lastTime: 0, count: 0, windowStart: now };
-    if (now - rateEntry.windowStart > 60000) {
-        rateEntry.count = 0;
-        rateEntry.windowStart = now;
-    }
-    rateEntry.count++;
-    rateEntry.lastTime = now;
-    connRateLimit.set(ip, rateEntry);
-
-    if (rateEntry.count > 30) {
-        const banDuration = Math.min(rateEntry.count * 10000, 600000);
-        ipBanList.set(ip, now + banDuration);
-        socket.write('HTTP/1.1 429 Too Many Requests\r\n\r\n');
-        socket.destroy();
-        return;
-    }
-
-    if (now - rateEntry.lastTime < 500 && rateEntry.count > 5) {
-        socket.write('HTTP/1.1 429 Too Many Requests\r\n\r\n');
-        socket.destroy();
-        return;
-    }
+    
+    // IP-based Rate Limiting removed (Tor compatibility).
+    // DoS protection is handled via Adaptive PoW in the WS message handler.
 
     if (wss.clients.size >= MAX_TOTAL_CONN) {
         socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');

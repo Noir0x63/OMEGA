@@ -21,6 +21,9 @@ vault.json
 public/
 Tor/
 dist/
+onion_service/
+tor_data/
+torrc.txt
 
 # OS/IDE junk
 .DS_Store
