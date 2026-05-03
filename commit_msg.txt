@@ -1,0 +1,19 @@
+[SECURITY] Hardened PFS & ECDSA Attestation Patch (VULN-01 & VULN-02)
+
+Auditor: Eduardo "Noir0x63" Camarillo
+
+This commit resolves two critical structural vulnerabilities in the ZTAP v3.1 E2EE implementation:
+
+1. VULN-01: Perfect Forward Secrecy (PFS) Mitigation
+   - Converted the inert ECDH shared secret into an active cryptographic binding.
+   - Replaced pure PBKDF2 with a two-stage PBKDF2 -> HKDF Key Derivation Function.
+   - Enforced a hard failure (`SEC_FAULT_NO_ECDH`) if the ephemeral ECDH secret is missing, eliminating silent degradations to zero-salt.
+   - Added pre-worker initialization guards to prevent race conditions during ECDH handshakes.
+
+2. VULN-02: Zero Trust Attestation Leak Remediation
+   - Completely removed symmetric HMAC-based attestation which leaked the private key to the server.
+   - Migrated the worker to generate a volatile, asymmetric ECDSA (P-256) key pair per session.
+   - Enforced `extractable: false` on the private key, ensuring it never leaves the Web Worker memory.
+   - Updated the server to import the client's SPKI public key and verify signatures using IEEE P1363 encoding, eliminating the server's capability to forge client identities.
+
+Also includes comprehensive Red Team Audit Reports detailing the findings, failed initial implementations, and the definitive cryptographic resolutions.

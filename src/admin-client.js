@@ -78,13 +78,31 @@ document.getElementById('file-input').onchange = async (e) => {
 
 document.getElementById('pem-upload').onclick = () => document.getElementById('file-input').click();
 
-async function deriveKey(token, salt) {
+// PARCHE VULN-1: KDF de dos etapas PBKDF2 → HKDF (idéntico al Worker del cliente).
+// Combina la resistencia a fuerza bruta de PBKDF2 con el secreto ECDH efímero via HKDF.
+async function deriveKey(token, salt, ecdhSecret) {
     const enc = new TextEncoder();
     const saltBuf = enc.encode(salt);
-    const base = await crypto.subtle.importKey('raw', enc.encode(token), 'PBKDF2', false, ['deriveKey']);
-    return crypto.subtle.deriveKey(
+
+    // Etapa 1: PBKDF2 — deriva bits intermedios
+    const pbkdfBase = await crypto.subtle.importKey('raw', enc.encode(token), 'PBKDF2', false, ['deriveBits']);
+    const pbkdfBits = await crypto.subtle.deriveBits(
         { name: 'PBKDF2', salt: saltBuf, iterations: 600000, hash: 'SHA-256' },
-        base,
+        pbkdfBase,
+        256
+    );
+
+    // Etapa 2: HKDF — ata el secreto ECDH efímero para PFS real
+    const hkdfSalt = (ecdhSecret && ecdhSecret.length > 0) ? new Uint8Array(ecdhSecret) : new Uint8Array(32);
+    const hkdfBase = await crypto.subtle.importKey('raw', pbkdfBits, 'HKDF', false, ['deriveKey']);
+    return crypto.subtle.deriveKey(
+        {
+            name: 'HKDF',
+            salt: hkdfSalt,
+            info: new TextEncoder().encode('ztap-v3-msg-key'),
+            hash: 'SHA-256'
+        },
+        hkdfBase,
         { name: 'AES-GCM', length: 256 },
         false,
         ['encrypt', 'decrypt']
@@ -176,7 +194,10 @@ function connectAdmin() {
                         if (Math.abs(Date.now() - initData.ts) > 600000) return;
                         users[sessId] = {
                             username: initData.username,
-                            symmetricKey: await deriveKey(initData.token, initData.sessionId || sessId),
+                            // PARCHE VULN-1: Incluir el ecdhSecret del Admin INIT para derivar la misma
+                            // clave AES-GCM que usa el cliente. Sin este secreto efímero, la clave
+                            // no puede reconstruirse retroactivamente (PFS real).
+                            symmetricKey: await deriveKey(initData.token, initData.sessionId || sessId, initData.ecdhSecret),
                             receiveCounter: 0,
                             sendCounter: 0,
                             lastInitTs: initData.ts

@@ -183,7 +183,9 @@ function initWorker() {
                     }
                 } else if (data.type === 'ERROR') { reject(data.error); }
             };
-            worker.postMessage({ type: 'INIT', username: username, token: userToken, sessionId: sessionId, masterPublicPem: MASTER_PUBLIC_KEY });
+            // PARCHE VULN-1: Pasar el secreto ECDH efímero al Worker para el KDF de dos etapas.
+            // ecdhSharedSecret es Uint8Array generada por el ECDH de esta sesión.
+            worker.postMessage({ type: 'INIT', username: username, token: userToken, sessionId: sessionId, masterPublicPem: MASTER_PUBLIC_KEY, ecdhSecret: ecdhSharedSecret ? Array.from(ecdhSharedSecret) : null });
         } catch (e) {
             reject(e);
         }
@@ -213,6 +215,11 @@ async function connect() {
             }
 
             if (frame.type === 'ECDH_COMPLETE') {
+                // PARCHE HALLAZGO-C: Abortar si el ECDH no completó correctamente.
+                if (!ecdhSharedSecret || !pfsReady) {
+                    ws.close(1008, 'PFS_NOT_READY');
+                    return;
+                }
                 initWorker().catch(e => alert(e));
                 return;
             }

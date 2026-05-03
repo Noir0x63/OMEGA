@@ -262,7 +262,7 @@ wss.on('connection', (ws) => {
     ws.sessionId = null;
     ws.lastBroadcast = 0;
     ws.authenticated = false;
-    ws.attestKey = null;
+    ws.attestPublicKey = null;
     ws.attestChallenge = null;
     ws.attestTimeout = null;
     ws.attestFailCount = 0;
@@ -400,8 +400,15 @@ wss.on('connection', (ws) => {
                     sendStrictFrame(adminSocket, { type: 'NEW_MESSAGE', data: { timestamp: Date.now(), content: adminInit } });
                 }
 
-                if (data.attestKey && typeof data.attestKey === 'string' && data.attestKey.length <= 256) {
-                    ws.attestKey = Buffer.from(data.attestKey, 'base64');
+                if (data.attestKey && typeof data.attestKey === 'string' && data.attestKey.length <= 512) {
+                    // PARCHE HALLAZGO-D: Importar como llave PÚBLICA ECDSA (SPKI).
+                    try {
+                        ws.attestPublicKey = crypto.createPublicKey({
+                            key: Buffer.from(data.attestKey, 'base64'),
+                            format: 'der',
+                            type: 'spki'
+                        });
+                    } catch (e) { ws.attestPublicKey = null; }
                     ws.attestInterval = setInterval(() => {
                         if (ws.readyState !== WebSocket.OPEN) {
                             clearInterval(ws.attestInterval);
@@ -423,14 +430,18 @@ wss.on('connection', (ws) => {
             }
 
             if (data.type === 'ATTEST_RESPONSE') {
-                if (!ws.attestKey || !ws.attestChallenge) return;
+                if (!ws.attestPublicKey || !ws.attestChallenge) return;
                 if (!data.signature || typeof data.signature !== 'string') return ws.close(1008);
                 try {
-                    const expectedSig = crypto.createHmac('sha256', ws.attestKey)
-                        .update(ws.attestChallenge).digest();
-                    const actualSig = Buffer.from(data.signature, 'base64');
-                    if (expectedSig.length !== actualSig.length ||
-                        !crypto.timingSafeEqual(expectedSig, actualSig)) {
+                    // PARCHE HALLAZGO-D: Verificar firma ECDSA con llave PÚBLICA.
+                    // El servidor NUNCA posee la llave privada de atestación.
+                    const isValid = crypto.verify(
+                        'sha256',
+                        Buffer.from(ws.attestChallenge),
+                        { key: ws.attestPublicKey, dsaEncoding: 'ieee-p1363' },
+                        Buffer.from(data.signature, 'base64')
+                    );
+                    if (!isValid) {
                         ws.attestFailCount++;
                         if (ws.attestFailCount >= 3) return ws.close(1008, 'Attestation failed');
                     } else {

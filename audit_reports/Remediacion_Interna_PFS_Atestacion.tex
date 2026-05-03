@@ -1,0 +1,126 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{color}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+
+\lstset{style=mystyle}
+
+\title{\textbf{Internal Audit \& Remediation Report}\\ \Large ZTAP Protocol v3.1 IRONCLAD}
+\author{Eduardo "Noir0x63" Camarillo}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This document details the security audit process applied to the ZTAP v3.1 protocol, focusing specifically on the mitigation of two critical vulnerabilities (VULN-01 and VULN-02). It documents the initial identification of the flaws, the defective initial implementation that generated silent failure states, and the subsequent re-audit that led to the final resolution and implementation of true Perfect Forward Secrecy (PFS) and ECDSA asymmetric attestation.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+During routine security posture and Zero Trust model evaluations of the ZTAP v3.1 protocol, structural vulnerabilities were identified in the AES-GCM key derivation process and the client attestation mechanism. The criticality of these vulnerabilities required a two-phase remediation process due to deficiencies found in the first proposed patch.
+
+\section{Initial Vulnerability Identification}
+
+\subsection{VULN-01: Fake PFS Implementation (Security Theater)}
+The protocol simulated an ephemeral key exchange using the P-256 elliptic curve (ECDH). However, the computed shared secret (\texttt{ecdhSharedSecret}) was never fed into the Key Derivation Function (KDF). The \texttt{localKey} was derived purely via \texttt{PBKDF2} using a static \textit{token} and \textit{sessionId} that were predictable following an asymmetric key compromise. This completely negated Perfect Forward Secrecy (PFS).
+
+\subsection{VULN-02: Attestation Private Key Leak (Zero Trust Breach)}
+The client derived a symmetric HMAC key to prove its identity to the server and, due to logical design flaws, explicitly marked this key with \texttt{extractable: true}. It subsequently exported the key in plaintext (\texttt{raw}) format and transmitted it to the server. This destroyed the asymmetry required by the Zero Trust model, allowing any MitM attacker or compromised server to forge signatures indefinitely.
+
+\section{First Remediation Phase (Failed Implementation)}
+
+The engineering team implemented an initial patch targeting VULN-01. The change introduced a two-stage derivation (\texttt{PBKDF2} $\rightarrow$ \texttt{HKDF}) to inject ephemeral entropy. However, the re-audit revealed severe flaws:
+
+\begin{itemize}
+    \item \textbf{Silent Degradation to Zero Salt (Finding B):} If \texttt{ecdhSecret} resulted in \texttt{null}, the code assigned a predictable 32-byte zero salt (\texttt{new Uint8Array(32)}). This silently degraded security without triggering any alerts.
+    \item \textbf{Race Condition (Finding C):} The client could initialize the Worker before possessing the ECDH shared secret if the \texttt{ECDH\_COMPLETE} frame arrived prematurely.
+    \item \textbf{Intact HMAC Vulnerability (Finding D):} The original patch completely ignored the attestation key leak (VULN-02), leaving the key exposed and extractable.
+\end{itemize}
+
+\section{Final Remediation and Detailed Resolution}
+
+After suspending the first attempt, a coordinated patch was designed and implemented across three core files (\texttt{client.js}, \texttt{ztap-worker.js}, \texttt{server.js}).
+
+\subsection{Definitive PFS Mitigation (Findings B and C)}
+Hard failure barriers were added at multiple points in the connection lifecycle:
+
+\begin{lstlisting}[language=JavaScript, caption=Strict guard against PFS degradation]
+// ztap-worker.js
+if (!d.ecdhSecret || !Array.isArray(d.ecdhSecret) || d.ecdhSecret.length < 32) {
+    self.postMessage({ type: 'ERROR', error: 'SEC_FAULT_NO_ECDH' });
+    return; // Hard fail. Security is non-negotiable.
+}
+\end{lstlisting}
+
+At the client level (\texttt{client.js}), state validation was added before initializing the \textit{Worker}:
+\begin{lstlisting}[language=JavaScript, caption=Race condition prevention]
+if (!ecdhSharedSecret || !pfsReady) {
+    ws.close(1008, 'PFS_NOT_READY');
+    return;
+}
+\end{lstlisting}
+
+\subsection{Attestation Migration to ECDSA (Finding D / VULN-02)}
+The use of symmetric HMAC for attestation was completely eliminated. The \textit{Worker} now generates an ephemeral asymmetric ECDSA P-256 key pair in volatile memory.
+
+\begin{lstlisting}[language=JavaScript, caption=Asymmetric generation and key isolation]
+async function generateAttestKeyPair() {
+    return await crypto.subtle.generateKey(
+        { name: 'ECDSA', namedCurve: 'P-256' },
+        false, // The private key is mathematically non-extractable
+        ['sign', 'verify']
+    );
+}
+// Secure export:
+const attestPubSpki = await crypto.subtle.exportKey('spki', attestKeyPair.publicKey);
+\end{lstlisting}
+
+On the server side (\texttt{server.js}), the verification was redesigned to properly import the public key in SPKI format and utilize WebCrypto's standard P1363 encoding:
+
+\begin{lstlisting}[language=JavaScript, caption=Server-side signature verification]
+const isValid = crypto.verify(
+    'sha256',
+    Buffer.from(ws.attestChallenge),
+    { key: ws.attestPublicKey, dsaEncoding: 'ieee-p1363' },
+    Buffer.from(data.signature, 'base64')
+);
+\end{lstlisting}
+
+\section{Conclusion}
+The intervention demonstrated the efficacy of successive layered audits. The current corrections ensure genuine Perfect Forward Secrecy by imperatively injecting the ECDH secret into the message KDF. Concurrently, the attestation mechanism now confines sensitive material to the isolated \textit{Worker} environment, ensuring that the server can verify identities but completely lacks the capability to forge them.
+
+\end{document}

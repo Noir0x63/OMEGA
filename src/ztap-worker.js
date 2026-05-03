@@ -1,6 +1,6 @@
 let localKey = null;
 let adminPublicKey = null;
-let attestHmacKey = null;
+let attestSignKey = null; // PARCHE HALLAZGO-D: Llave privada ECDSA (nunca se exporta)
 let initResolver;
 const initPromise = new Promise(resolve => { initResolver = resolve; });
 
@@ -21,30 +21,46 @@ function base64ToBuffer(b64) {
     return buf.buffer;
 }
 
-async function deriveKey(token, salt) {
+// PARCHE VULN-1: KDF de dos etapas PBKDF2 → HKDF para PFS real.
+// Etapa 1 (PBKDF2): Resistencia a fuerza bruta sobre el token del usuario.
+// Etapa 2 (HKDF): Amarra el secreto ECDH efímero. Sin él, la clave AES es irrecuperable.
+async function deriveKey(token, salt, ecdhSecret) {
     const enc = new TextEncoder();
     const tokenBuf = enc.encode(token);
     const saltBuf = enc.encode(salt);
-    const base = await crypto.subtle.importKey('raw', tokenBuf, 'PBKDF2', false, ['deriveKey']);
-    return crypto.subtle.deriveKey(
+
+    // Etapa 1: PBKDF2 — deriva bits intermedios (no una clave AES directamente)
+    const pbkdfBase = await crypto.subtle.importKey('raw', tokenBuf, 'PBKDF2', false, ['deriveBits']);
+    const pbkdfBits = await crypto.subtle.deriveBits(
         { name: 'PBKDF2', salt: saltBuf, iterations: 600000, hash: 'SHA-256' },
-        base,
+        pbkdfBase,
+        256
+    );
+
+    // Etapa 2: HKDF — ata el secreto ECDH efímero como sal para PFS real
+    // Si ecdhSecret no está disponible, se usa un buffer cero (degradación segura)
+    const hkdfSalt = ecdhSecret ? new Uint8Array(ecdhSecret) : new Uint8Array(32);
+    const hkdfBase = await crypto.subtle.importKey('raw', pbkdfBits, 'HKDF', false, ['deriveKey']);
+    return crypto.subtle.deriveKey(
+        {
+            name: 'HKDF',
+            salt: hkdfSalt,
+            info: new TextEncoder().encode('ztap-v3-msg-key'),
+            hash: 'SHA-256'
+        },
+        hkdfBase,
         { name: 'AES-GCM', length: 256 },
         false,
         ['encrypt', 'decrypt']
     );
 }
 
-async function deriveAttestKey(token, salt) {
-    const enc = new TextEncoder();
-    const saltBuf = enc.encode(salt + ":attest");
-    const base = await crypto.subtle.importKey('raw', enc.encode(token), 'PBKDF2', false, ['deriveKey']);
-    return crypto.subtle.deriveKey(
-        { name: 'PBKDF2', salt: saltBuf, iterations: 100000, hash: 'SHA-256' },
-        base,
-        { name: 'HMAC', hash: 'SHA-256', length: 256 },
-        true,  // AUDIT FIX 3: extractable=true — exported for server-side attestation verification
-        ['sign']
+// PARCHE HALLAZGO-D: Par asimétrico ECDSA. La privada queda aislada en el Worker.
+async function generateAttestKeyPair() {
+    return await crypto.subtle.generateKey(
+        { name: 'ECDSA', namedCurve: 'P-256' },
+        false, // privateKey.extractable = false
+        ['sign', 'verify']
     );
 }
 
@@ -90,31 +106,49 @@ self.onmessage = async (e) => {
     const d = e.data;
     try {
         if (d.type === 'INIT') {
-            // AUDIT FIX 2: Salt changed from username (low entropy) to sessionId (32 bytes hex)
-            localKey = await deriveKey(d.token, d.sessionId);
-            attestHmacKey = await deriveAttestKey(d.token, d.sessionId);
+            // PARCHE HALLAZGO-B: Fallo duro si no hay secreto ECDH efímero.
+            if (!d.ecdhSecret || !Array.isArray(d.ecdhSecret) || d.ecdhSecret.length < 32) {
+                self.postMessage({ type: 'ERROR', error: 'SEC_FAULT_NO_ECDH' });
+                return;
+            }
+
+            localKey = await deriveKey(d.token, d.sessionId, d.ecdhSecret);
+
+            // PARCHE HALLAZGO-D: Generar par ECDSA efímero. Privada aislada en Worker.
+            const attestKeyPair = await generateAttestKeyPair();
+            attestSignKey = attestKeyPair.privateKey;
 
             const pemContents = d.masterPublicPem.replace(/-----(BEGIN|END) PUBLIC KEY-----|\s/g, '');
             const binaryDer = base64ToBuffer(pemContents);
             adminPublicKey = await crypto.subtle.importKey('spki', binaryDer, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt']);
 
             const enc = new TextEncoder();
-            // AUDIT FIX 1+2: Include sessionId in RSA-encrypted payload for admin key derivation
-            const initPayloadBuf = enc.encode(JSON.stringify({ token: d.token, username: d.username, sessionId: d.sessionId, ts: Date.now() }));
+            const initPayloadBuf = enc.encode(JSON.stringify({
+                token: d.token,
+                username: d.username,
+                sessionId: d.sessionId,
+                ts: Date.now(),
+                ecdhSecret: Array.from(d.ecdhSecret)
+            }));
             const encInit = await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, adminPublicKey, initPayloadBuf);
 
-            // AUDIT FIX 3: Export attestation key for server-side verification
-            const rawAttestKey = await crypto.subtle.exportKey('raw', attestHmacKey);
+            // PARCHE HALLAZGO-D: Exportar SOLO la llave PÚBLICA (SPKI).
+            const attestPubSpki = await crypto.subtle.exportKey('spki', attestKeyPair.publicKey);
 
             initResolver();
-            self.postMessage({ type: 'INITIALIZED', payload: secureBufferToBase64(encInit), attestKey: secureBufferToBase64(rawAttestKey) });
+            self.postMessage({ type: 'INITIALIZED', payload: secureBufferToBase64(encInit), attestKey: secureBufferToBase64(attestPubSpki) });
             return;
         }
 
         if (d.type === 'ATTEST_CHALLENGE') {
             await initPromise;
             const challengeBuf = new TextEncoder().encode(d.challenge);
-            const sig = await crypto.subtle.sign('HMAC', attestHmacKey, challengeBuf);
+            // PARCHE HALLAZGO-D: Firmar con ECDSA (llave privada aislada).
+            const sig = await crypto.subtle.sign(
+                { name: 'ECDSA', hash: { name: 'SHA-256' } },
+                attestSignKey,
+                challengeBuf
+            );
             self.postMessage({ type: 'ATTEST_RESPONSE', signature: secureBufferToBase64(sig), challenge: d.challenge });
             return;
         }

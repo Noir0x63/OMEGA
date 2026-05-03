@@ -1,0 +1,144 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{titlesec}
+\usepackage{enumitem}
+
+% Color definitions for severity levels
+\definecolor{critical}{HTML}{D32F2F}
+\definecolor{high}{HTML}{F57C00}
+\definecolor{medium}{HTML}{FBC02D}
+\definecolor{codebg}{HTML}{F5F5F5}
+
+% Code listing style
+\lstset{
+    backgroundcolor=\color{codebg},
+    basicstyle=\ttfamily\footnotesize,
+    breaklines=true,
+    captionpos=b,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    xleftmargin=15pt
+}
+
+\title{\textbf{Offensive Cryptographic Audit Report}\\ \Large ZTAP Protocol v3.1 ``IRONCLAD''}
+\author{Antigravity Red Team \and Primary Auditor: Elite Cryptographic Agent}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This document outlines the findings of a Zero-Trust, highly aggressive cryptographic audit performed on the ZTAP (Zero-Knowledge Terminal Architecture \& Protocol) v3.1 framework. The audit adopted an offensive Red Team methodology, assuming the presence of a persistent, capable adversary (e.g., a malicious Tor exit node or compromised infrastructure). While the architecture demonstrates an exceptional theoretical foundation, critical structural flaws were identified in the implementation of Forward Secrecy, state management, and entropy handling.
+\end{abstract}
+
+\section{Methodology \& Threat Model}
+The assessment was conducted under a strict \textbf{Zero Trust} paradigm. Every cryptographic primitive, state transition, and memory handling operation was scrutinized mathematically and logically. The threat model assumes the adversary has:
+\begin{itemize}
+    \item Full capability to intercept, modify, and replay WebSocket frames (Active MITM).
+    \item Future access to the server's filesystem and the administrator's physical device (Post-Compromise).
+    \item Full visibility of the source code (No Security by Obscurity).
+\end{itemize}
+
+\section{Cryptographic Vulnerabilities}
+
+% --- FINDING 1 ---
+\subsection*{\textcolor{critical}{[CRITICAL]} VULN-001: Cryptographic Placebo \& Complete Rupture of Perfect Forward Secrecy (PFS)}
+\textbf{CVSS v3.1 Score:} 9.1 (Critical) | \textbf{Compromised:} Long-term Confidentiality
+\vspace{0.5cm}
+
+\textbf{Description:} 
+The protocol advertises Perfect Forward Secrecy via ephemeral Elliptic Curve Diffie-Hellman (ECDH). The client and server explicitly negotiate ECDH keys and compute a \texttt{sharedSecret}. However, extensive code analysis reveals that this shared secret is \textbf{never utilized} to encrypt or authenticate any data. The entire End-to-End Encryption (E2EE) relies solely on the user's \texttt{token}, which is transmitted to the server encrypted under the static, long-term RSA-OAEP Master Public Key.
+
+\textbf{Exploitation Vector (PoC):}
+\begin{enumerate}
+    \item An adversary captures the encrypted \texttt{INIT} payload and all subsequent \texttt{ASYNC\_MSG} ciphertext traffic.
+    \item At an indefinite point in the future, the adversary compromises the administrator's machine and extracts \texttt{master\_private.enc} alongside its passphrase.
+    \item The adversary decrypts the static RSA private key, decrypts the historical \texttt{INIT} payload to recover the client's \texttt{token}, derives the symmetric AES-GCM key, and retroactively decrypts the entire session. PFS is mathematically non-existent.
+\end{enumerate}
+
+\textbf{Remediation (Diff Concept):}
+The ephemeral ECDH shared secret must be incorporated into the final symmetric key derivation material.
+\begin{lstlisting}[language=JavaScript, title=Conceptual Patch in ztap-worker.js]
+// Combine client token with network entropy (ECDH shared secret)
+const combinedMaterial = new Uint8Array(tokenBuf.length + ecdhSharedSecret.length);
+combinedMaterial.set(tokenBuf, 0);
+combinedMaterial.set(ecdhSharedSecret, tokenBuf.length);
+
+const base = await crypto.subtle.importKey('raw', combinedMaterial, 'PBKDF2', false, ['deriveKey']);
+// Proceed with PBKDF2 using the combined base
+\end{lstlisting}
+
+% --- FINDING 2 ---
+\subsection*{\textcolor{critical}{[CRITICAL]} VULN-002: Initialization Replay Attack (Session Reset Hijacking)}
+\textbf{CVSS v3.1 Score:} 7.4 (High) | \textbf{Compromised:} Integrity, Authenticity
+\vspace{0.5cm}
+
+\textbf{Description:} 
+While asynchronous messages are protected against replay via monotonic counters (\texttt{decodedObj.c <= receiveCounter}), the genesis \texttt{INIT} block is vulnerable. The \texttt{INIT} block is encrypted with static RSA and contains the session token. The server rejects \texttt{INIT} blocks older than 10 minutes, but within that Time-To-Live (TTL) window, the block can be replayed repeatedly.
+
+\textbf{Exploitation Vector (PoC):}
+\begin{enumerate}
+    \item A MITM attacker intercepts the \texttt{INIT} block of a legitimate client.
+    \item The attacker resends the exact same \texttt{INIT} payload to the server.
+    \item The administrator's client decrypts it, validates the timestamp (it is still within the 10-minute window), and \textbf{overwrites the session state}, resetting the \texttt{receiveCounter} to 0.
+    \item The attacker can now replay previously captured \texttt{ASYNC\_MSG} frames (e.g., $c=1$), tricking the administrator's UI into rendering the same message multiple times, breaking contextual integrity.
+\end{enumerate}
+
+\textbf{Remediation (Diff Concept):}
+Implement a strict cache for initialization nonces, or fundamentally block re-initialization of known session hashes.
+\begin{lstlisting}[language=JavaScript, title=admin-client.js Patch]
+const existing = users[sessId];
+- if (existing && initData.ts <= existing.lastInitTs) return;
++ if (existing) throw new Error('SECURITY_FAULT: SESSION_ALREADY_INITIALIZED');
+\end{lstlisting}
+
+% --- FINDING 3 ---
+\subsection*{\textcolor{high}{[HIGH]} VULN-003: Structural Entropy Destruction in KDF Salt Encoding}
+\textbf{CVSS v3.1 Score:} 6.8 (Medium) | \textbf{Compromised:} Key Derivation Resilience
+\vspace{0.5cm}
+
+\textbf{Description:} 
+In \texttt{ztap-worker.js}, the session token and the \texttt{sessionId} are used to derive the final AES-GCM key via PBKDF2. The \texttt{sessionId} is a 32-byte hexadecimal string. However, instead of parsing the hex string back to binary, the code passes the string directly to \texttt{TextEncoder().encode()}.
+
+\textbf{Exploitation Vector (PoC):}
+By encoding hex characters as ASCII/UTF-8 bytes (e.g., 'a' becomes \texttt{0x61}), each byte of the resulting salt only carries 4 bits of actual entropy instead of 8. A 32-character hex string encoded this way yields 32 bytes of memory usage but only 128 bits of actual mathematical entropy, severely weakening the KDF's resistance to optimized dictionary attacks on the client's local token generation.
+
+\textbf{Remediation (Diff Concept):}
+\begin{lstlisting}[language=JavaScript, title=ztap-worker.js Patch]
+// Revert string to raw binary before passing to PBKDF2
+- const saltBuf = enc.encode(salt);
++ const saltBuf = new Uint8Array(salt.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+\end{lstlisting}
+
+% --- FINDING 4 ---
+\subsection*{\textcolor{high}{[HIGH]} VULN-004: Volatile Memory Sanitization Failure}
+\textbf{CVSS v3.1 Score:} 7.5 (High) | \textbf{Compromised:} Confidentiality (Memory Scraping)
+\vspace{0.5cm}
+
+\textbf{Description:} 
+A core tenet of Anti-Forensics is aggressive memory hygiene. While the protocol claims "Zero-persistence", plaintext cryptographic keys are left to linger in the JavaScript heap until the Garbage Collector initiates a sweep. Specifically, in \texttt{admin-client.js}, the decrypted \texttt{master\_private.enc} yields a plaintext PEM string that is never actively scrubbed from memory arrays.
+
+\textbf{Remediation (Diff Concept):}
+Implement explicit \texttt{.fill(0)} operations on all \texttt{Uint8Array} or \texttt{ArrayBuffer} instances immediately after cryptographic operations conclude.
+
+% --- FINDING 5 ---
+\subsection*{\textcolor{medium}{[MEDIUM]} VULN-005: Deterministic Administrative Routing}
+\textbf{CVSS v3.1 Score:} 5.5 (Medium) | \textbf{Compromised:} Routing Confidentiality
+\vspace{0.5cm}
+
+\textbf{Description:} 
+The administrative routing URL rotates hourly based on an HMAC involving the current time and a \texttt{SERVER\_NONCE}. Because the \texttt{SERVER\_NONCE} resides statically in \texttt{server\_secrets.enc}, an adversary who compromises this file can pre-calculate all future administrative routes indefinitely, bypassing the dynamic routing defense mechanism.
+
+\textbf{Remediation (Diff Concept):}
+Regenerate the \texttt{SERVER\_NONCE} dynamically alongside the 24-hour vault purge cycle.
+
+\section{Conclusion \& Directive}
+The ZTAP v3.1 protocol exhibits significant ambition, but the current implementation requires immediate restructuring to achieve its stated goals. The ``Placebo PFS'' vulnerability represents a critical structural failure. It is imperative to halt production deployment until the ECDH shared secret is cryptographically bound to the E2EE key derivation pipeline and the initialization replay vectors are sealed.
+
+\end{document}
