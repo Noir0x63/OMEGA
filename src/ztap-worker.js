@@ -122,6 +122,7 @@ self.onmessage = async (e) => {
             const binaryDer = base64ToBuffer(pemContents);
             adminPublicKey = await crypto.subtle.importKey('spki', binaryDer, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt']);
 
+            const enc = new TextEncoder();
             const initPayloadBuf = enc.encode(JSON.stringify({
                 token: d.token,
                 username: d.username,
