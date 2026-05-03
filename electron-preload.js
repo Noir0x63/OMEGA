@@ -8,5 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     
     // Enviar acciones al backend
     submitPassphrase: (passphrase) => ipcRenderer.invoke('submit-passphrase', passphrase),
-    openDashboard: (url) => ipcRenderer.invoke('open-dashboard', url)
+    openDashboard: (url) => ipcRenderer.invoke('open-dashboard', url),
+    toggleSessions: (status) => ipcRenderer.invoke('toggle-sessions', status),
+    selfDestruct: () => ipcRenderer.invoke('self-destruct')
 });

@@ -5,14 +5,14 @@
     <title>ZTAP Protocol</title>
     <style>
         :root {
-            --neon-green: #00ff41;
-            --dark-bg: #050505;
-            --panel-bg: #0d0d0d;
-            --text-muted: #666;
+            --bg: #000;
+            --text: #fff;
+            --border: #fff;
+            --muted: #888;
         }
         body {
-            background-color: var(--dark-bg);
-            color: var(--neon-green);
+            background-color: var(--bg);
+            color: var(--text);
             font-family: 'Courier New', Courier, monospace;
             display: flex;
             flex-direction: column;
@@ -21,132 +21,130 @@
             height: 100vh;
             margin: 0;
             overflow: hidden;
-            letter-spacing: 0.5px;
+            text-transform: uppercase;
         }
         #logo {
-            font-size: 16px;
+            font-size: 14px;
             font-weight: bold;
-            margin-bottom: 30px;
+            margin-bottom: 40px;
             text-align: center;
             white-space: pre;
-            text-shadow: 0 0 10px rgba(0, 255, 65, 0.4);
             line-height: 1.2;
+            letter-spacing: 2px;
         }
         .container {
-            background: var(--panel-bg);
-            width: 85%;
-            max-width: 650px;
-            padding: 35px 40px;
-            border: 1px solid #222;
-            box-shadow: 0 0 25px rgba(0, 255, 65, 0.05);
+            background: var(--bg);
+            width: 90%;
+            max-width: 600px;
+            padding: 40px;
+            border: 2px solid var(--border);
             box-sizing: border-box;
-            border-radius: 4px;
         }
         
         /* Keygen UI */
         #keygen-view { display: none; text-align: center; }
-        .prompt-text { margin-bottom: 25px; font-size: 15px; }
+        .prompt-text { margin-bottom: 30px; font-size: 16px; letter-spacing: 1px; }
         input[type="password"] {
             background: #000;
-            color: var(--neon-green);
-            border: 1px solid var(--neon-green);
-            padding: 14px;
+            color: #fff;
+            border: 2px solid var(--border);
+            padding: 15px;
             width: 100%;
-            margin-bottom: 25px;
+            margin-bottom: 20px;
             font-family: 'Courier New', Courier, monospace;
             font-size: 16px;
             outline: none;
             text-align: center;
-            letter-spacing: 3px;
             box-sizing: border-box;
         }
-        input[type="password"]:focus { box-shadow: 0 0 12px rgba(0, 255, 65, 0.3); }
         
         button {
-            background: transparent;
-            color: var(--neon-green);
-            border: 1px solid var(--neon-green);
-            padding: 14px 20px;
+            background: #000;
+            color: #fff;
+            border: 2px solid var(--border);
+            padding: 15px 20px;
             font-family: 'Courier New', Courier, monospace;
             font-weight: bold;
             cursor: pointer;
             text-transform: uppercase;
-            transition: all 0.2s ease;
+            transition: none;
             width: 100%;
             font-size: 14px;
-            letter-spacing: 1px;
+            letter-spacing: 2px;
         }
         button:hover {
-            background: var(--neon-green);
+            background: #fff;
             color: #000;
-            box-shadow: 0 0 15px rgba(0, 255, 65, 0.5);
         }
         
         /* Boot UI */
         #boot-view { display: block; text-align: left; }
         #progress-container {
-            border: 1px solid #333;
+            border: 2px solid var(--border);
             width: 100%;
-            height: 10px;
-            margin-bottom: 15px;
+            height: 14px;
+            margin: 20px 0;
             background: #000;
         }
         #progress-bar {
-            background-color: var(--neon-green);
+            background-color: #fff;
             height: 100%;
             width: 0%;
-            transition: width 0.3s ease;
-            box-shadow: 0 0 8px var(--neon-green);
         }
-        #status-text { color: var(--text-muted); font-size: 13px; text-transform: uppercase; }
+        #status-text { color: var(--muted); font-size: 12px; }
         
         /* Ready UI */
         #ready-view { display: none; text-align: center; }
         .status-header {
-            color: var(--neon-green);
-            font-size: 18px;
+            font-size: 20px;
             font-weight: bold;
-            margin-bottom: 25px;
-            text-shadow: 0 0 10px rgba(0, 255, 65, 0.4);
+            margin-bottom: 30px;
+            border: 2px solid #fff;
+            display: inline-block;
+            padding: 10px 20px;
         }
         .address-box {
             background: #000;
-            padding: 20px;
-            border: 1px solid #222;
-            margin-bottom: 15px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+            padding: 25px;
+            border: 2px solid var(--border);
+            margin-bottom: 20px;
         }
         .address-label {
-            color: var(--text-muted);
+            color: var(--muted);
             font-size: 11px;
-            margin-bottom: 12px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            margin-bottom: 15px;
+            letter-spacing: 2px;
         }
         .onion-address {
-            font-size: 14px; /* Perfect size for 56 char v3 onions */
+            font-size: 13px;
             word-break: break-all;
             color: #fff;
             user-select: all;
+            border: 1px dashed #444;
+            padding: 10px;
         }
         .admin-route {
-            color: #0ff;
-            margin-top: 15px;
-            font-size: 13px;
-            opacity: 0.8;
+            color: #fff;
+            margin-top: 10px;
+            font-size: 12px;
+            letter-spacing: 1px;
         }
         .action-row {
             display: flex;
             justify-content: space-between;
-            gap: 15px;
-            margin-top: 30px;
+            gap: 20px;
+            margin-top: 40px;
         }
         .action-row button {
             width: 48%;
-            padding: 14px 10px;
-            font-size: 12px;
+        }
+        #open-dash {
+            background: #fff;
+            color: #000;
+        }
+        #open-dash:hover {
+            background: #000;
+            color: #fff;
         }
     </style>
 </head>
@@ -190,7 +188,12 @@
             
             <div class="action-row">
                 <button id="copy-onion">Copy .onion Link</button>
-                <button id="open-dash" style="background: var(--neon-green); color: #000;">Open Admin Panel</button>
+                <button id="open-dash" style="background: var(--text); color: var(--bg);">Open Admin Panel</button>
+            </div>
+
+            <div class="action-row" style="margin-top: 20px;">
+                <button id="toggle-sessions">SESSIONS: ON</button>
+                <button id="self-destruct" style="border-color: #ff3333; color: #ff3333;">SELF-DESTRUCT</button>
             </div>
         </div>
     </div>
@@ -199,6 +202,8 @@
         const bootView = document.getElementById('boot-view');
         const keygenView = document.getElementById('keygen-view');
         const readyView = document.getElementById('ready-view');
+
+        let relayActive = true;
 
         window.electronAPI.onNeedsKeygen(() => {
             bootView.style.display = 'none';
@@ -241,12 +246,38 @@
                 btn.style.borderColor = '#fff';
                 setTimeout(() => {
                     btn.textContent = 'Copy .onion Link';
-                    btn.style.color = 'var(--neon-green)';
-                    btn.style.borderColor = 'var(--neon-green)';
+                    btn.style.color = 'var(--text)';
+                    btn.style.borderColor = 'var(--border)';
                 }, 2000);
             };
 
             document.getElementById('open-dash').onclick = () => window.electronAPI.openDashboard(`http://localhost:3000/${data.adminPath}`);
+
+            document.getElementById('toggle-sessions').onclick = () => {
+                relayActive = !relayActive;
+                const btn = document.getElementById('toggle-sessions');
+                btn.textContent = relayActive ? 'SESSIONS: ON' : 'SESSIONS: OFF';
+                btn.style.borderColor = relayActive ? '#fff' : '#444';
+                btn.style.color = relayActive ? '#fff' : '#444';
+                window.electronAPI.toggleSessions(relayActive);
+            };
+
+            document.getElementById('self-destruct').onclick = () => {
+                if (!confirm('WARNING: SYSTEM SELF-DESTRUCT INITIATED. ALL SESSIONS WILL BE NUKED AND THE BINARY WILL BE DELETED. PROCEED?')) return;
+                const btn = document.getElementById('self-destruct');
+                btn.disabled = true;
+                btn.textContent = 'T-MINUS 5s...';
+                let count = 5;
+                const interval = setInterval(() => {
+                    count--;
+                    btn.textContent = `T-MINUS ${count}s...`;
+                    if (count === 0) {
+                        clearInterval(interval);
+                        btn.textContent = 'EXECUTING...';
+                    }
+                }, 1000);
+                window.electronAPI.selfDestruct();
+            };
         });
     </script>
 </body>

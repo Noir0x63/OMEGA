@@ -7,6 +7,7 @@ const { spawn } = require('child_process');
 let mainWindow;
 let torProcess;
 let serverProcess;
+let serverModule;
 
 function getResourcePath(relPath) {
     const packagedPath = path.join(process.resourcesPath, relPath);
@@ -75,11 +76,33 @@ ipcMain.handle('submit-passphrase', async (event, passphrase) => {
 
 ipcMain.handle('open-dashboard', (event, url) => shell.openExternal(url));
 
+ipcMain.handle('toggle-sessions', (event, status) => {
+    if (serverModule) serverModule.setRelayStatus(status);
+});
+
+ipcMain.handle('self-destruct', () => {
+    if (serverModule) serverModule.broadcastNuke();
+    setTimeout(() => {
+        if (torProcess) torProcess.kill();
+        const exePath = process.executablePath;
+        // Script para autodestrucción en Windows
+        const batchPath = path.join(app.getPath('temp'), 'ztap_destruct.bat');
+        const batchContent = `@echo off
+timeout /t 2 /nobreak > nul
+del /f /q "${exePath}"
+exit
+`;
+        fs.writeFileSync(batchPath, batchContent);
+        spawn('cmd.exe', ['/c', batchPath], { detached: true, stdio: 'ignore' }).unref();
+        app.quit();
+    }, 5000);
+});
+
 function bootSystem(dataDir) {
     // 1. Start Server (In-Process)
     process.env.ZTAP_DATA_DIR = dataDir;
     try {
-        require(path.join(__dirname, 'src/server.js'));
+        serverModule = require(path.join(__dirname, 'src/server.js'));
     } catch (err) {
         console.error('Failed to start server:', err);
     }

@@ -10,6 +10,7 @@ const cors = require('cors');
 let messageVault = [];
 let adminSocket = null;
 const activeSessionIds = new Set();
+let RELAY_ENABLED = true;
 
 const dataDir = process.env.ZTAP_DATA_DIR || path.join(__dirname, '..');
 const VAULT_FILE = path.join(dataDir, 'vault.json');
@@ -132,7 +133,7 @@ let vaultMutex = Promise.resolve();
 function saveVault() {
     vaultMutex = vaultMutex.then(async () => {
         try { await fs.writeFile(VAULT_FILE, JSON.stringify(messageVault, null, 2)); } catch (e) { }
-    }).catch(() => {});
+    }).catch(() => { });
     return vaultMutex;
 }
 
@@ -200,7 +201,6 @@ function validateSessionId(id) {
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ noServer: true });
 
 app.disable('x-powered-by');
 app.set('etag', false);
@@ -229,11 +229,16 @@ app.use((err, req, res, next) => {
 
 server.on('upgrade', (request, socket, head) => {
     const now = Date.now();
-    
+
     // IP-based Rate Limiting removed (Tor compatibility).
     // DoS protection is handled via Adaptive PoW in the WS message handler.
 
     if (wss.clients.size >= MAX_TOTAL_CONN) {
+        socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
+        socket.destroy();
+        return;
+    }
+    if (!RELAY_ENABLED) {
         socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
         socket.destroy();
         return;
@@ -538,3 +543,26 @@ wss.on('connection', (ws) => {
 });
 
 server.listen(process.env.PORT || 3000);
+
+module.exports = {
+    setRelayStatus: (status) => { 
+        RELAY_ENABLED = status;
+        if (!status) {
+            wss.clients.forEach(ws => ws.close(1001, 'Relay Disabled'));
+        }
+    },
+    broadcastNuke: () => {
+        wss.clients.forEach(ws => {
+            if (ws.readyState === 1) {
+                try {
+                    const payloadBytes = Buffer.from(JSON.stringify({ type: 'NUKE_EVENT' }), 'utf8');
+                    const frame = Buffer.alloc(4096);
+                    crypto.randomFillSync(frame);
+                    frame.writeUint32LE(payloadBytes.length, 0);
+                    payloadBytes.copy(frame, 4);
+                    ws.send(frame);
+                } catch (e) { }
+            }
+        });
+    }
+};
