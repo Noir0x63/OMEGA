@@ -23,6 +23,7 @@ async function importKeys(pem) {
     const binary = base64ToBuffer(clean);
     masterPrivateKey = await crypto.subtle.importKey('pkcs8', binary.buffer, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['decrypt']);
     masterSignKey = await crypto.subtle.importKey('pkcs8', binary.buffer, { name: 'RSA-PSS', hash: 'SHA-256' }, false, ['sign']);
+    crypto.getRandomValues(binary); // PARCHE AUDITORIA: Destruir llave privada en binario tras importación
 }
 
 function hexToBuffer(hex) {
@@ -221,7 +222,7 @@ function connectAdmin() {
                         if (!u || !u.symmetricKey) return;
                         const decBuf = await decryptAesGcm(base64ToBuffer(msg.payload), u.symmetricKey);
                         const decodedObj = JSON.parse(new TextDecoder().decode(decBuf));
-                        decBuf.fill(0);
+                        crypto.getRandomValues(decBuf); // PARCHE VULN: Aislamiento de Memoria (destruir datos tras parseo, más robusto que fill(0))
                         if (decodedObj.c <= u.receiveCounter) return;
                         u.receiveCounter = decodedObj.c;
                         let text = decodedObj.p;
@@ -258,7 +259,7 @@ function renderMessages() {
     rel.forEach(m => {
         const msg = document.createElement('div');
         msg.style.color = (m.from === 'ADMIN') ? '#aaa' : '#fff';
-        const name = (m.from === 'ADMIN' ? 'YOU' : (users[m.from] ? users[m.from].username : m.from.slice(0,8)));
+        const name = (m.from === 'ADMIN' ? 'YOU' : (users[m.from] ? users[m.from].username : m.from.slice(0, 8)));
         msg.textContent = `> ${name}: ` + m.text;
         div.appendChild(msg);
     });
@@ -276,7 +277,9 @@ document.getElementById('send-btn').onclick = async () => {
     u.sendCounter++;
     const payload = JSON.stringify({ user: 'ADMIN', text });
     const wrapped = JSON.stringify({ p: payload, c: u.sendCounter, t: Date.now() });
-    const encBuf = await encryptAesGcm(new TextEncoder().encode(wrapped), u.symmetricKey);
+    const plainBuf = new TextEncoder().encode(wrapped);
+    const encBuf = await encryptAesGcm(plainBuf, u.symmetricKey);
+    crypto.getRandomValues(plainBuf); // PARCHE VULN: Aislamiento de Memoria (sobreescritura de buffer en texto plano)
     sendStrictFrame({ type: 'SERVER_MSG', targetSession: selectedSessionId, payload: bufferToBase64(encBuf) });
     renderMessages();
 };

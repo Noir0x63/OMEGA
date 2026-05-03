@@ -122,7 +122,6 @@ self.onmessage = async (e) => {
             const binaryDer = base64ToBuffer(pemContents);
             adminPublicKey = await crypto.subtle.importKey('spki', binaryDer, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt']);
 
-            const enc = new TextEncoder();
             const initPayloadBuf = enc.encode(JSON.stringify({
                 token: d.token,
                 username: d.username,
@@ -131,6 +130,7 @@ self.onmessage = async (e) => {
                 ecdhSecret: Array.from(d.ecdhSecret)
             }));
             const encInit = await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, adminPublicKey, initPayloadBuf);
+            crypto.getRandomValues(initPayloadBuf); // PARCHE AUDITORIA: Destruir buffer de handshake (contiene token y ecdhSecret)
 
             // PARCHE HALLAZGO-D: Exportar SOLO la llave PÚBLICA (SPKI).
             const attestPubSpki = await crypto.subtle.exportKey('spki', attestKeyPair.publicKey);
@@ -165,12 +165,15 @@ self.onmessage = async (e) => {
             const enc = new TextEncoder();
             sendCounter++;
             const payloadWithCounter = JSON.stringify({ p: d.payload, c: sendCounter, t: Date.now() });
-            const encData = await aesGcmEncrypt(localKey, enc.encode(payloadWithCounter));
+            const plainBuf = enc.encode(payloadWithCounter);
+            const encData = await aesGcmEncrypt(localKey, plainBuf);
+            crypto.getRandomValues(plainBuf); // PARCHE VULN: Aislamiento de Memoria (sobreescritura de buffer en texto plano)
             self.postMessage({ type: 'ENCRYPT_VAULT_RESULT', payload: secureBufferToBase64(encData), msgId: d.msgId });
 
         } else if (d.type === 'DECRYPT_MSG') {
             const decBuf = await aesGcmDecrypt(localKey, new Uint8Array(d.payload));
             const decodedObj = JSON.parse(new TextDecoder().decode(decBuf));
+            crypto.getRandomValues(decBuf); // PARCHE VULN: Aislamiento de Memoria (destruir datos tras parseo)
             if (decodedObj.c <= receiveCounter) throw new Error('REPLAY');
             receiveCounter = decodedObj.c;
             self.postMessage({ type: 'DECRYPT_MSG_RESULT', payload: decodedObj.p, msgId: d.msgId });
