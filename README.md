@@ -46,10 +46,10 @@ graph LR
 ### 1. Autonomous Cryptographic Engine
 The protocol implements a multi-layered encryption stack using the native **WebCrypto API**, eliminating third-party library dependencies and mitigating supply chain attacks.
 *   **Key Exchange:** RSA-OAEP (4096-bit) with SHA-256 for identity authentication.
-*   **Perfect Forward Secrecy:** ECDH (P-256) ephemeral keypair per session — compromising the master RSA key does **NOT** reveal historical traffic.
+*   **Perfect Forward Secrecy:** True PFS via an ephemeral **ECDH (P-256)** key exchange. The resulting shared secret is strictly bound to the message encryption key. Compromising the master RSA key does **NOT** allow decryption of historical traffic.
 *   **Stream Security:** AES-256-GCM with unique Initialization Vectors (IV) per frame.
 *   **Signature Scheme:** **RSA-PSS** (Probabilistic Signature Scheme) with 32-byte salt for identity verification (Admin Command & Control).
-*   **Identity Derivation:** PBKDF2-HMAC-SHA256 with **600,000 iterations** and **high-entropy session salt** (32 bytes CSPRNG) to ensure brute-force resistance.
+*   **Two-Stage Key Derivation:** A robust PBKDF2 $\rightarrow$ HKDF pipeline. **Stage 1 (PBKDF2):** 600,000 iterations of HMAC-SHA256 against the static session token provides brute-force resistance. **Stage 2 (HKDF):** Binds the ephemeral ECDH shared secret as the salt, ensuring mathematically sound Forward Secrecy.
 
 ### 2. Encrypted-At-Rest Key Management
 All cryptographic secrets are protected at rest — plaintext key material **never** persists on disk.
@@ -129,8 +129,12 @@ A formal offensive cryptographic audit was performed under a **Zero Trust** ment
 | 3 | **Client-Side Attestation Flaw** — Client self-validated attestation challenges | CRÍTICO | 8.5 | ✅ FIXED |
 | 4 | **EXIF Metadata Leakage** — JPEG files sent without stripping EXIF/IPTC | ALTO | 6.8 | ✅ FIXED |
 | 5 | **Vault Race Condition** — Concurrent `fs.writeFile` calls corrupt `vault.json` | MEDIO | — | ✅ FIXED |
+| 6 | **Fake PFS Implementation** — ECDH secret generated but inert. Replaced with PBKDF2 -> HKDF | CRÍTICO | 9.8 | ✅ FIXED |
+| 7 | **Zero Trust HMAC Leak** — Attestation private key sent to server. Migrated to ECDSA | CRÍTICO | 8.5 | ✅ FIXED |
 
-> Full report: [`Reportes de auditoria/reporte.tex`](Reportes%20de%20auditoria/reporte.tex)
+> Full reports: 
+> - [Red Team Audit Report](audit_reports/RedTeam_ZTAP_Audit_Report.md)
+> - [Internal Remediation Document](audit_reports/Remediacion_Interna_PFS_Atestacion.tex)
 
 ---
 
@@ -162,13 +166,13 @@ ZTAP v3.1 introduces a **Native Desktop Client** (Electron) designed to complete
 |-------|-----------|----------|
 | **Key Exchange** | RSA-4096 + ECDH P-256 | NIST SP 800-56A |
 | **Stream Cipher** | AES-256-GCM | NIST SP 800-38D |
-| **Key Derivation** | PBKDF2 (600k) + scrypt | OWASP 2025 |
-| **KDF Salt** | sessionId (32 bytes CSPRNG) | High-entropy |
+| **Key Derivation** | PBKDF2 (600k) + HKDF | OWASP 2025 |
+| **KDF Salt** | sessionId + ecdhSecret | High-entropy |
 | **Signatures** | RSA-PSS (32-byte salt) | PKCS#1 v2.1 |
 | **Key Storage** | AES-256-GCM + PBKDF2 (600k) | Encrypted-at-rest |
 | **Admin Auth** | Browser-side decrypt + RSA-PSS C/R | Zero-trust |
-| **Attestation** | Server-side HMAC + timingSafeEqual | Anti-tamper |
-| **Forward Secrecy** | ECDH ephemeral per session | PFS compliant |
+| **Attestation** | Server-side ECDSA verify + P1363 | Zero-knowledge |
+| **Forward Secrecy** | ECDH + HKDF ephemeral per session | PFS compliant |
 | **Anti-DoS** | Adaptive PoW (16–24 bit) | Dynamic scaling |
 | **Anti-Forensics** | EXIF/IPTC strip + 24h vault purge | Zero-persistence |
 | **Transport** | Tor Hidden Service | Onion routing |
