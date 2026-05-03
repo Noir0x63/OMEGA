@@ -1,0 +1,428 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{color}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{xcolor}
+\usepackage{mdframed}
+
+\geometry{margin=2.5cm}
+
+% --- Color Definitions ---
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+\definecolor{criticalred}{rgb}{0.8,0.0,0.0}
+\definecolor{safegreen}{rgb}{0.0,0.5,0.1}
+\definecolor{warningyellow}{rgb}{0.7,0.5,0.0}
+
+% --- Code Listing Style ---
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2
+}
+\lstset{style=mystyle}
+
+% --- Custom Environments ---
+\newmdenv[
+  linecolor=criticalred,
+  backgroundcolor=red!5,
+  linewidth=2pt,
+  frametitle={\textcolor{criticalred}{\textbf{CRITICAL FINDING}}},
+  frametitlebackgroundcolor=red!15
+]{criticalbox}
+
+\newmdenv[
+  linecolor=safegreen,
+  backgroundcolor=green!5,
+  linewidth=2pt,
+  frametitle={\textcolor{safegreen}{\textbf{REMEDIATION VERIFIED}}},
+  frametitlebackgroundcolor=green!10
+]{safebox}
+
+\newmdenv[
+  linecolor=warningyellow,
+  backgroundcolor=yellow!5,
+  linewidth=2pt,
+  frametitle={\textcolor{warningyellow}{\textbf{RESIDUAL RISK}}},
+  frametitlebackgroundcolor=yellow!10
+]{warningbox}
+
+% --- Document Metadata ---
+\hypersetup{
+    pdftitle={ZTAP VULN-03 Audit Report — Blind Signing Oracle},
+    pdfauthor={Eduardo Camarillo},
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue
+}
+
+\title{
+    \textbf{Internal Audit \& Remediation Report}\\[0.5em]
+    \Large ZTAP Protocol v3.1 IRONCLAD\\[0.3em]
+    \large \texttt{VULN-03: Blind Signing Oracle / Domain Separation Failure}\\[1em]
+    \normalsize \textcolor{criticalred}{\textbf{SEVERITY: CRITICAL}} \quad
+    \textcolor{safegreen}{\textbf{STATUS: MITIGATED}}
+}
+\author{
+    Eduardo ``Noir0x63'' Camarillo\\
+    \small Internal Red Team Security Auditor\\
+    \small \texttt{ZTAP Zero-Trust Architecture Protocol}
+}
+\date{May 2, 2026}
+
+% =========================================================
+\begin{document}
+% =========================================================
+
+\maketitle
+\hrule
+\vspace{1em}
+
+\begin{abstract}
+This document constitutes a formal internal security audit report for the ZTAP (Zero-Trust Architecture Protocol) v3.1, specifically addressing the critical vulnerability designated \textbf{VULN-03}: the \textit{Blind Signing Oracle} arising from the absence of Domain Separation in the administrator authentication mechanism. The report documents in full technical detail the identification of the flaw, its cryptographic attack surface, the proposed remediation strategy, the implementation of the Domain Separation patch across the affected modules (\texttt{admin-client.js} and \texttt{server.js}), and the subsequent re-audit verification confirming full mitigation. Additionally, three residual risk findings identified during the re-audit are disclosed and classified.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% =========================================================
+\section{Introduction and Scope}
+% =========================================================
+
+During the second phase of the internal Red Team security audit of the ZTAP v3.1 protocol---conducted after the successful remediation of VULN-01 (Fake PFS) and VULN-02 (HMAC Key Leakage)---a critical structural flaw was identified in the administrator authentication flow. Unlike the previous vulnerabilities, which resided in the symmetric cryptographic layer, VULN-03 was a \textit{protocol-level design flaw} affecting the asymmetric authentication handshake used to grant privileged administrative access to the ZTAP server.
+
+\subsection{Affected Components}
+
+\begin{table}[h!]
+\centering
+\begin{tabularx}{\textwidth}{lXl}
+\toprule
+\textbf{File} & \textbf{Role} & \textbf{Lines Affected} \\
+\midrule
+\texttt{src/admin-client.js} & Browser-side administrator client & 178--183 \\
+\texttt{src/server.js} & Node.js WebSocket server & 353--382 \\
+\bottomrule
+\end{tabularx}
+\caption{Components directly implicated in VULN-03}
+\end{table}
+
+\subsection{Cryptographic Primitives Involved}
+
+\begin{itemize}
+    \item \textbf{RSA-PSS} (PKCS\#1 v2.1): The asymmetric signature scheme used by the administrator to prove possession of the master private key.
+    \item \textbf{Challenge-Response Protocol}: A nonce-based authentication flow where the server issues a 32-byte random challenge and the client must sign it.
+    \item \textbf{Domain Separation}: A cryptographic principle establishing that a key used for purpose $X$ must never be used, without a context prefix, to sign data for purpose $Y$.
+\end{itemize}
+
+% =========================================================
+\section{Vulnerability Identification}
+% =========================================================
+
+\subsection{The Authentication Flow (Pre-Patch)}
+
+The administrator authentication protocol prior to the patch operated as follows:
+
+\begin{enumerate}
+    \item The administrator client connects via WebSocket and immediately sends a \texttt{REQ\_CHALLENGE} frame.
+    \item The server generates a 32-byte cryptographically random nonce and stores it in a per-connection \texttt{challenges} map with a 30-second TTL:
+    \begin{lstlisting}[language=JavaScript, caption=Server-side challenge generation (server.js)]
+const nonce = crypto.randomBytes(32).toString('hex');
+challenges.set(ws, { nonce, ts: Date.now() });
+sendStrictFrame(ws, { type: 'AUTH_CHALLENGE', nonce });
+    \end{lstlisting}
+
+    \item The administrator client receives the challenge and signs the raw nonce directly with the master RSA private key using RSA-PSS:
+    \begin{lstlisting}[language=JavaScript, caption=Vulnerable client-side signing (admin-client.js - BEFORE PATCH)]
+if (frame.type === 'AUTH_CHALLENGE') {
+    // VULNERABLE: Signs the raw nonce with no domain context
+    const sig = await crypto.subtle.sign(
+        { name: 'RSA-PSS', saltLength: 32 },
+        masterSignKey,
+        new TextEncoder().encode(frame.nonce) // <-- Raw nonce, no prefix
+    );
+    sendStrictFrame({ type: 'ADMIN_AUTH', signature: bufferToBase64(sig) });
+}
+    \end{lstlisting}
+
+    \item The server verifies the RSA-PSS signature against the stored nonce using the master public key from disk:
+    \begin{lstlisting}[language=JavaScript, caption=Vulnerable server-side verification (server.js - BEFORE PATCH)]
+const isValid = crypto.verify('sha256', Buffer.from(stored.nonce), {
+    key: pubKey,
+    padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+    saltLength: 32
+}, Buffer.from(data.signature, 'base64'));
+    \end{lstlisting}
+\end{enumerate}
+
+\subsection{Root Cause Analysis: The Blind Signing Oracle}
+
+\begin{criticalbox}
+The administrator client \textbf{signs any 64-character hexadecimal string sent by the server without any verification of its contextual purpose}. The master RSA private key acts as a \textit{cryptographic oracle}: given any arbitrary input, it will produce a valid RSA-PSS signature for it.
+\end{criticalbox}
+
+A \textit{signing oracle} in cryptographic terms is a system that will sign arbitrary messages upon request. The danger is not in the signing itself---RSA-PSS is provably secure---but in the \textit{absence of domain separation}, which allows the same key and the same signing operation to be exploited in a context for which it was never intended.
+
+\subsubsection{The Attack Vector: Cross-Protocol Signature Reuse}
+
+Consider the following scenario:
+
+\begin{enumerate}
+    \item ZTAP is expanded in the future to include an additional signed operation, for example, a \texttt{NUKE\_AUTH} command requiring the admin to sign a payload to authorize a full vault purge. The server generates a payload with a nonce such as \texttt{a3f9...}. 
+    
+    \item An attacker who has compromised the WebSocket transport layer (via a rogue WebSocket proxy or a BGP hijack redirecting traffic to a malicious server) intercepts the connection just before the \texttt{NUKE\_AUTH} challenge and replaces it with an \texttt{AUTH\_CHALLENGE} frame containing the same nonce \texttt{a3f9...}.
+    
+    \item The administrator client, receiving what appears to be a standard \texttt{AUTH\_CHALLENGE}, signs \texttt{a3f9...} with the master key and returns the signature.
+    
+    \item The attacker now possesses a valid RSA-PSS signature over \texttt{a3f9...} using the master key---\textit{the exact signature required to authorize the vault nuke}---without the administrator having intended to authorize it.
+\end{enumerate}
+
+This is the classical \textbf{Type Confusion Attack} enabled by the absence of Domain Separation. The fundamental equation describing the vulnerability is:
+
+\begin{equation}
+    \text{Sign}_{K_{priv}}(\text{msg}) = \text{Sign}_{K_{priv}}(\text{any\_malicious\_payload})
+\end{equation}
+
+Because there is no structural difference between an authentication nonce and any other piece of data presented to the signing function, the administrator's key becomes an unconditional oracle.
+
+\subsubsection{The Attack Vector: Compromised Server}
+
+A more direct and immediately exploitable scenario requires only that the server be compromised:
+
+\begin{enumerate}
+    \item The server is compromised via a supply-chain attack, a Node.js RCE, or an insider threat.
+    \item The compromised server serves a modified \texttt{AUTH\_CHALLENGE} where \texttt{nonce} contains not a random 32-byte hex string, but a carefully crafted payload that---once signed by the administrator's master key---constitutes a valid signature for an entirely different operation.
+    \item The administrator's client, designed to sign any challenge without scrutiny, complies.
+\end{enumerate}
+
+In both scenarios, the precondition for exploitation is met the moment the administrator opens the admin panel: the signing oracle is active by design.
+
+% =========================================================
+\section{Remediation Design: Domain Separation}
+% =========================================================
+
+\subsection{The Cryptographic Principle}
+
+Domain Separation is a foundational hardening technique in modern cryptographic protocol design. Its formal definition is:
+
+\begin{quote}
+\textit{For a given cryptographic key $K$ used for purpose $P$, all messages signed or encrypted under $K$ for purpose $P$ must be structurally distinguishable from messages signed for any other purpose $P'$, $P \neq P'$, such that a valid signature under $K$ for purpose $P$ cannot be interpreted as a valid signature for purpose $P'$.}
+\end{quote}
+
+The standard implementation technique is \textbf{domain prefix injection}: prepend a unique, fixed, and purpose-specific string to every message before it is passed to the cryptographic primitive. This is exactly the approach employed in the ZTAP patch.
+
+\subsection{The Remediation Strategy}
+
+The remediation introduces a mandatory, fixed domain prefix \texttt{ZTAP\_ADMIN\_AUTH:} that is prepended to the raw nonce before signing on the client side, and before verification on the server side. This ensures:
+
+\begin{itemize}
+    \item \textbf{Unforgeability across contexts:} A signature over \texttt{ZTAP\_ADMIN\_AUTH:}<nonce> is provably worthless for any other protocol operation because no other operation will verify against a payload beginning with that prefix.
+    \item \textbf{Symmetric enforcement:} Because the server applies the \textit{same} prefix to the stored nonce before calling \texttt{crypto.verify()}, a non-prefixed signature will \textit{always} fail verification---even a legitimate one---providing defense-in-depth against the case where the client is somehow tricked into sending a raw signature.
+    \item \textbf{Zero additional cryptographic cost:} The RSA-PSS operation itself is unchanged. No key rotation, no new algorithms, no protocol handshake modifications required.
+\end{itemize}
+
+% =========================================================
+\section{Implementation}
+% =========================================================
+
+\subsection{Client-Side Patch (admin-client.js)}
+
+The modification is surgical: one line is added to construct the domain-separated nonce before calling \texttt{crypto.subtle.sign()}.
+
+\begin{lstlisting}[language=JavaScript, caption=Patched client-side signing with Domain Separation (admin-client.js)]
+if (frame.type === 'AUTH_CHALLENGE') {
+    // PATCH VULN-03: Domain Separation (Prevents Blind Signing Oracle).
+    // The raw nonce is NEVER signed directly. It is always prefixed with
+    // 'ZTAP_ADMIN_AUTH:' to bind the signature strictly to this context.
+    // A signature over this prefixed payload is cryptographically inert
+    // in any other protocol context, neutralizing type confusion attacks.
+    const separatedNonce = 'ZTAP_ADMIN_AUTH:' + frame.nonce;
+    const sig = await crypto.subtle.sign(
+        { name: 'RSA-PSS', saltLength: 32 },
+        masterSignKey,
+        new TextEncoder().encode(separatedNonce) // Prefixed domain
+    );
+    sendStrictFrame({ type: 'ADMIN_AUTH', signature: bufferToBase64(sig) });
+}
+\end{lstlisting}
+
+\subsection{Server-Side Patch (server.js)}
+
+The symmetric modification is applied to the server's \texttt{ADMIN\_AUTH} handler. The exact same prefix is applied to the \textit{stored} nonce before it is passed to \texttt{crypto.verify()}.
+
+\begin{lstlisting}[language=JavaScript, caption=Patched server-side verification with Domain Separation (server.js)]
+if (data.type === 'ADMIN_AUTH') {
+    const stored = challenges.get(ws);
+    if (!stored || Date.now() - stored.ts > CHALLENGE_TTL) return ws.close(1008);
+    if (!data.signature || typeof data.signature !== 'string') return ws.close(1008);
+    const pubKey = await getMasterPublicKey();
+    if (!pubKey) return ws.close(1008);
+    try {
+        // PATCH VULN-03: Domain Separation (Prevents Blind Signing Oracle).
+        // The server reconstructs the same prefixed domain string that the
+        // legitimate client signs. A raw signature (no prefix) will ALWAYS
+        // fail this verification, providing defense-in-depth.
+        const separatedNonce = 'ZTAP_ADMIN_AUTH:' + stored.nonce;
+        const isValid = crypto.verify(
+            'sha256',
+            Buffer.from(separatedNonce), // Prefixed domain
+            {
+                key: pubKey,
+                padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+                saltLength: 32
+            },
+            Buffer.from(data.signature, 'base64')
+        );
+        if (isValid) {
+            if (adminSocket && adminSocket.readyState === WebSocket.OPEN)
+                adminSocket.close(1000);
+            adminSocket = ws;
+            ws.authenticated = true;
+            challenges.delete(ws);
+            // ... deliver history vault to admin ...
+        } else { ws.close(1008); }
+    } catch (e) {
+        ws.close(1008);
+    }
+    return;
+}
+\end{lstlisting}
+
+\subsection{Correctness Proof by Symmetry}
+
+Let $N$ be the raw nonce generated by the server, $D$ the domain prefix string \texttt{"ZTAP\_ADMIN\_AUTH:"}, $K_{priv}$ the administrator's master RSA private key, and $K_{pub}$ the corresponding master RSA public key stored on the server.
+
+\begin{itemize}
+    \item \textbf{Signing (client):} $\sigma = \text{RSA-PSS-Sign}_{K_{priv}}(D \| N)$
+    \item \textbf{Verification (server):} $\text{RSA-PSS-Verify}_{K_{pub}}(D \| N, \sigma) \stackrel{?}{=} \top$
+\end{itemize}
+
+For any adversarial payload $M \neq D \| N$, the verification equation $\text{RSA-PSS-Verify}_{K_{pub}}(D \| N, \text{Sign}_{K_{priv}}(M)) = \top$ holds only if $M = D \| N$, which by the security of RSA-PSS requires knowledge of $K_{priv}$---the very secret the protocol is designed to protect. Therefore, Domain Separation is correctly enforced.
+
+% =========================================================
+\section{Re-Audit Verification}
+% =========================================================
+
+\subsection{VULN-03 Status: Confirmed Mitigated}
+
+Post-patch code review confirmed exact textual and semantic symmetry between the client and server implementations:
+
+\begin{table}[h!]
+\centering
+\begin{tabularx}{\textwidth}{lXl}
+\toprule
+\textbf{Component} & \textbf{Signed/Verified Payload} & \textbf{Status} \\
+\midrule
+\texttt{admin-client.js} L181 & \texttt{'ZTAP\_ADMIN\_AUTH:' + frame.nonce} & \textcolor{safegreen}{\textbf{CONFIRMED}} \\
+\texttt{server.js} L361--L362 & \texttt{'ZTAP\_ADMIN\_AUTH:' + stored.nonce} & \textcolor{safegreen}{\textbf{CONFIRMED}} \\
+\bottomrule
+\end{tabularx}
+\caption{Symmetric Domain Separation verification across client and server}
+\end{table}
+
+The prefix is \textbf{identical} on both sides and \textbf{hardcoded}---it cannot be spoofed via a crafted server response because the client \textit{constructs} the prefixed message locally rather than receiving it from the server.
+
+\subsection{Residual Findings Identified During Re-Audit}
+
+The re-audit identified three additional low-severity findings which do not constitute exploitable vulnerabilities in the current deployment model but represent deviations from cryptographic hygiene best practices.
+
+\subsubsection{Finding-R1: Zero-Salt Fallback in HKDF (ztap-worker.js, L42)}
+
+\begin{warningbox}
+\textbf{Severity: LOW | Risk: Latent Regression}\\
+The HKDF stage of \texttt{deriveKey()} contains a fallback branch that assigns a 32-byte zero salt if \texttt{ecdhSecret} is null: \texttt{new Uint8Array(32)}. This branch is unreachable in the current codebase because the hard-fail guard at L110 will terminate the Worker first. However, if the guard is ever removed or refactored, this branch silently degrades PFS to a static zero-salt derivation. The comment \textit{``degradación segura''} (safe degradation) is semantically incorrect and should be replaced with a hard error. \textbf{Recommended action:} Remove the fallback branch entirely and throw an explicit error.
+\end{warningbox}
+
+\subsubsection{Finding-R2: Attestation Blind Signing in Worker (ztap-worker.js, L145)}
+
+\begin{warningbox}
+\textbf{Severity: LOW | Risk: Theoretical (Ephemeral Key)}\\
+The client-side attestation response in \texttt{ztap-worker.js} signs the raw ECDSA challenge without a domain prefix:
+\begin{lstlisting}[language=JavaScript, numbers=none]
+const challengeBuf = new TextEncoder().encode(d.challenge); // No prefix
+const sig = await crypto.subtle.sign({ name: 'ECDSA', ... }, attestSignKey, challengeBuf);
+\end{lstlisting}
+The practical risk is negligible because the ECDSA attestation key is ephemeral (non-extractable, destroyed when the Worker is terminated). However, this violates the Domain Separation principle applied elsewhere. \textbf{Recommended action:} Add prefix \texttt{ZTAP\_CLIENT\_ATTEST:} before signing.
+\end{warningbox}
+
+\subsubsection{Finding-R3: Nonce Input Validation Absent in Admin Client (admin-client.js, L180)}
+
+\begin{warningbox}
+\textbf{Severity: LOW | Risk: DoS on Admin Client}\\
+After applying the Domain Separation patch, the admin client constructs the signing payload as:
+\begin{lstlisting}[language=JavaScript, numbers=none]
+const separatedNonce = 'ZTAP_ADMIN_AUTH:' + frame.nonce;
+\end{lstlisting}
+No validation is performed on \texttt{frame.nonce} prior to concatenation. A compromised server could send a nonce of arbitrary length (e.g., several megabytes), causing the \texttt{TextEncoder + RSA-PSS} pipeline to consume excessive memory in the admin's browser tab, effectively constituting a Denial of Service. \textbf{Recommended action:} Add type and length validation: \texttt{if (typeof frame.nonce !== 'string' || frame.nonce.length !== 64) return;}.
+\end{warningbox}
+
+% =========================================================
+\section{Global Security Posture Summary}
+% =========================================================
+
+\begin{table}[h!]
+\centering
+\begin{tabularx}{\textwidth}{llXl}
+\toprule
+\textbf{ID} & \textbf{Severity} & \textbf{Description} & \textbf{Status} \\
+\midrule
+VULN-01 & Critical & Fake PFS / Static KDF Binding & \textcolor{safegreen}{\textbf{MITIGATED}} \\
+VULN-02 & Critical & HMAC Attestation Key Leakage & \textcolor{safegreen}{\textbf{MITIGATED}} \\
+VULN-03 & Critical & Blind Signing Oracle / Domain Separation Failure & \textcolor{safegreen}{\textbf{MITIGATED}} \\
+Finding-R1 & Low & Zero-salt fallback latent regression & \textcolor{warningyellow}{\textbf{OPEN}} \\
+Finding-R2 & Low & Worker attestation without domain prefix & \textcolor{warningyellow}{\textbf{OPEN}} \\
+Finding-R3 & Low & Admin nonce input not validated pre-signing & \textcolor{warningyellow}{\textbf{OPEN}} \\
+\bottomrule
+\end{tabularx}
+\caption{Complete security findings status post third audit cycle}
+\end{table}
+
+% =========================================================
+\section{Conclusion}
+% =========================================================
+
+The VULN-03 Blind Signing Oracle vulnerability has been fully and correctly remediated through the implementation of Domain Separation in the administrator authentication handshake. The patch is minimal in scope, correct by mathematical proof, and introduces zero protocol-breaking changes.
+
+The three residual findings (R1, R2, R3) identified during the re-audit represent low-risk deviations from cryptographic best practice rather than immediately exploitable vulnerabilities. They should be addressed in the next patch cycle to bring the ZTAP v3.1 codebase to a state of complete cryptographic hygiene.
+
+With the mitigation of VULN-01, VULN-02, and VULN-03, the ZTAP protocol's core security architecture satisfies the following Zero Trust properties:
+
+\begin{itemize}
+    \item \textbf{True Perfect Forward Secrecy:} Every session key is cryptographically bound to an ephemeral ECDH shared secret. Compromise of the master key does not retroactively expose session traffic.
+    \item \textbf{Non-Extractable Attestation:} The client's ECDSA attestation private key is generated inside a sandboxed Web Worker with \texttt{extractable: false}, making it impossible to exfiltrate from the browser environment.
+    \item \textbf{Domain-Separated Authentication:} The administrator's RSA master key cannot be coerced into signing arbitrary payloads through the authentication challenge-response flow.
+\end{itemize}
+
+\vspace{2em}
+\hrule
+\vspace{1em}
+\noindent\textbf{Auditor:} Eduardo ``Noir0x63'' Camarillo\\
+\textbf{Protocol:} ZTAP Zero-Trust Architecture Protocol v3.1 IRONCLAD\\
+\textbf{Audit Type:} Internal Red Team Review — Cycle 3\\
+\textbf{Date:} May 2, 2026\\
+\textbf{Next Review:} Upon implementation of Findings R1, R2, R3
+
+\end{document}
