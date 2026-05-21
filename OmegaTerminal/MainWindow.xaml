@@ -1,0 +1,209 @@
+<Window x:Class="OmegaTerminal.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:OmegaTerminal"
+        mc:Ignorable="d"
+        Title="Protocolo OMEGA - Panel de Control" 
+        Height="540" 
+        Width="780"
+        MinWidth="780"
+        MinHeight="540"
+        WindowStartupLocation="CenterScreen"
+        Background="#0E0E10"
+        Foreground="#F4F4F5"
+        FontFamily="Segoe UI, Segoe UI Variable Text, Arial">
+    
+    <Window.Resources>
+        <!-- Custom Modern ScrollViewer Scrollbar Style -->
+        <Style x:Key="ModernScrollBarThumb" TargetType="Thumb">
+            <Setter Property="Background" Value="#3F3F46"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="4"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <!-- Header Row -->
+            <RowDefinition Height="Auto"/>
+            <!-- Main Content Area -->
+            <RowDefinition Height="*"/>
+            <!-- Footer / Log Console Area -->
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- HEADER -->
+        <Grid Grid.Row="0" Margin="0,0,0,24">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            
+            <StackPanel>
+                <TextBlock Text="PROTOCOLO OMEGA" FontWeight="Bold" FontSize="20" Foreground="#FFFFFF"/>
+                <TextBlock Text="Zero Trust Ephemeral Cryptographic Relay" FontSize="12" Foreground="#A1A1AA" Margin="0,4,0,0"/>
+            </StackPanel>
+
+            <!-- Status Indicator Badge -->
+            <Border Grid.Column="1" x:Name="StatusBadge" Background="#18181B" BorderThickness="1" BorderBrush="#27272A" CornerRadius="12" Padding="12,6" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="#F59E0B" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="StatusBadgeText" Text="INICIALIZANDO" FontSize="11" FontWeight="Bold" Foreground="#F4F4F5" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- MAIN CONTENT PANELS (State-dependent) -->
+        <Grid Grid.Row="1" Margin="0,0,0,16">
+            
+            <!-- PANEL 1: LOADING SCREEN -->
+            <Grid x:Name="LoadingPanel" Visibility="Collapsed">
+                <Border Background="#18181B" BorderBrush="#27272A" BorderThickness="1" CornerRadius="12" Padding="32">
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Width="480">
+                        <TextBlock x:Name="LoadingTitle" Text="Estableciendo Conexión de Red..." FontSize="16" FontWeight="SemiBold" Foreground="#F4F4F5" HorizontalAlignment="Center" Margin="0,0,0,16"/>
+                        
+                        <!-- Custom Modern Linear Progress Bar -->
+                        <Grid Margin="0,0,0,16">
+                            <ProgressBar x:Name="LauncherProgressBar" Height="6" Minimum="0" Maximum="100" Value="0" Background="#27272A" Foreground="#FFFFFF" BorderThickness="0">
+                                <ProgressBar.Template>
+                                    <ControlTemplate TargetType="ProgressBar">
+                                        <Grid x:Name="TemplateRoot" ClipToBounds="true" SnapsToDevicePixels="true">
+                                            <Border CornerRadius="3" Background="{TemplateBinding Background}" BorderThickness="0"/>
+                                            <Border x:Name="PART_Indicator" CornerRadius="3" Background="{TemplateBinding Foreground}" HorizontalAlignment="Left"/>
+                                        </Grid>
+                                    </ControlTemplate>
+                                </ProgressBar.Template>
+                            </ProgressBar>
+                        </Grid>
+
+                        <TextBlock x:Name="LoadingStatus" Text="Cargando binarios portátiles de Node y Tor..." FontSize="12" Foreground="#A1A1AA" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="LoadingPercentText" Text="0%" FontSize="14" FontWeight="Bold" Foreground="#FFFFFF" HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- PANEL 2: MAIN CONTROL PANEL (ONION ACTIVE) -->
+            <Grid x:Name="ControlPanel" Visibility="Collapsed">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Left Card: Onion Address -->
+                <Border Grid.Column="0" Background="#18181B" BorderBrush="#27272A" BorderThickness="1" CornerRadius="12" Padding="24" Margin="0,0,12,0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0">
+                            <TextBlock Text="DIRECCIÓN DEL RELAY (.ONION)" FontSize="11" FontWeight="Bold" Foreground="#A1A1AA"/>
+                            <TextBlock Text="Servidor oculto activo e indetectable." FontSize="11" Foreground="#71717A" Margin="0,2,0,0"/>
+                        </StackPanel>
+
+                        <Border Grid.Row="1" Background="#09090B" BorderBrush="#27272A" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,16" VerticalAlignment="Center">
+                            <TextBox x:Name="OnionAddressBox" Text="Generando dirección..." IsReadOnly="True" BorderThickness="0" Background="Transparent" Foreground="#FFFFFF" FontSize="13" TextWrapping="Wrap" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" FontWeight="SemiBold" FontFamily="Consolas, Courier New"/>
+                        </Border>
+
+                        <Button Grid.Row="2" x:Name="BtnCopyOnion" Content="Copiar Dirección" Click="BtnCopyOnion_Click" Padding="0,10" Background="#F4F4F5" Foreground="#09090B" FontWeight="SemiBold" BorderThickness="0" Cursor="Hand">
+                            <Button.Resources>
+                                <Style TargetType="Border">
+                                    <Setter Property="CornerRadius" Value="6"/>
+                                </Style>
+                            </Button.Resources>
+                        </Button>
+                    </Grid>
+                </Border>
+
+                <!-- Right Card: Admin Access -->
+                <Border Grid.Column="1" Background="#18181B" BorderBrush="#27272A" BorderThickness="1" CornerRadius="12" Padding="24" Margin="12,0,0,0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0">
+                            <TextBlock Text="CONSOLA DE ADMINISTRACIÓN" FontSize="11" FontWeight="Bold" Foreground="#A1A1AA"/>
+                            <TextBlock Text="Acceso web seguro por token dinámico." FontSize="11" Foreground="#71717A" Margin="0,2,0,0"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="1" VerticalAlignment="Center" Margin="0,16">
+                            <TextBlock Text="Ruta Dinámica Hoy:" FontSize="11" Foreground="#71717A" HorizontalAlignment="Center"/>
+                            <TextBlock x:Name="AdminPathText" Text="/cargando..." FontSize="14" FontWeight="Bold" Foreground="#FFFFFF" HorizontalAlignment="Center" Margin="0,4,0,12" FontFamily="Consolas"/>
+                            
+                            <Border Background="#27272A" CornerRadius="4" Padding="12,8" HorizontalAlignment="Center">
+                                <TextBlock Text="Cero Registros • Llaves Rotativas" FontSize="10" Foreground="#A1A1AA" FontWeight="SemiBold"/>
+                            </Border>
+                        </StackPanel>
+
+                        <Button Grid.Row="2" x:Name="BtnOpenAdmin" Content="Abrir Panel Web" Click="BtnOpenAdmin_Click" Padding="0,10" Background="#27272A" Foreground="#F4F4F5" FontWeight="SemiBold" BorderThickness="1" BorderBrush="#3F3F46" Cursor="Hand">
+                            <Button.Resources>
+                                <Style TargetType="Border">
+                                    <Setter Property="CornerRadius" Value="6"/>
+                                </Style>
+                            </Button.Resources>
+                        </Button>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- PANEL 3: PASSPHRASE SETUP SCREEN -->
+            <Grid x:Name="SetupPanel" Visibility="Collapsed">
+                <Border Background="#18181B" BorderBrush="#27272A" BorderThickness="1" CornerRadius="12" Padding="32">
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Width="480">
+                        <TextBlock Text="CONFIGURAR LLAVES DE PROTOCOLO OMEGA" FontSize="16" FontWeight="SemiBold" Foreground="#F4F4F5" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                        <TextBlock Text="Crea una frase de contraseña maestra para cifrar tus llaves RSA-4096. Debe tener al menos 12 caracteres." FontSize="12" Foreground="#A1A1AA" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,0,0,24"/>
+
+                        <!-- Input fields -->
+                        <TextBlock Text="FRASE DE CONTRASEÑA MAESTRA" FontSize="10" FontWeight="Bold" Foreground="#71717A" Margin="0,0,0,6"/>
+                        <Border Background="#09090B" BorderBrush="#27272A" BorderThickness="1" CornerRadius="6" Padding="4" Margin="0,0,0,16">
+                            <PasswordBox x:Name="TxtPassphrase" BorderThickness="0" Background="Transparent" Foreground="#FFFFFF" FontSize="13" Padding="8,6"/>
+                        </Border>
+
+                        <TextBlock Text="CONFIRMAR FRASE DE CONTRASEÑA" FontSize="10" FontWeight="Bold" Foreground="#71717A" Margin="0,0,0,6"/>
+                        <Border Background="#09090B" BorderBrush="#27272A" BorderThickness="1" CornerRadius="6" Padding="4" Margin="0,0,0,24">
+                            <PasswordBox x:Name="TxtConfirmPassphrase" BorderThickness="0" Background="Transparent" Foreground="#FFFFFF" FontSize="13" Padding="8,6"/>
+                        </Border>
+
+                        <Button x:Name="BtnGenerateIdentity" Content="Generar Credenciales y Activar Relay" Click="BtnGenerateIdentity_Click" Padding="0,12" Background="#F4F4F5" Foreground="#09090B" FontWeight="SemiBold" BorderThickness="0" Cursor="Hand" Margin="0,0,0,16">
+                            <Button.Resources>
+                                <Style TargetType="Border">
+                                    <Setter Property="CornerRadius" Value="6"/>
+                                </Style>
+                            </Button.Resources>
+                        </Button>
+
+                        <TextBlock Text="⚠️ IMPORTANTE: Esta frase cifra tu identidad a nivel físico. No se almacena en ningún lugar y es completamente irrecuperable si se olvida." FontSize="10.5" Foreground="#EF4444" TextWrapping="Wrap" TextAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <!-- FOOTER / LOG CONSOLE -->
+        <Grid Grid.Row="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Text="REGISTROS DE AUDITORÍA Y SEGURIDAD" FontSize="10" FontWeight="Bold" Foreground="#71717A" Margin="0,0,0,8"/>
+            
+            <Border Grid.Row="1" Height="140" Background="#09090B" BorderBrush="#27272A" BorderThickness="1" CornerRadius="8" Padding="12">
+                <ScrollViewer x:Name="LogScrollViewer" VerticalScrollBarVisibility="Auto">
+                    <TextBox x:Name="LogTextBox" Text="" IsReadOnly="True" BorderThickness="0" Background="Transparent" Foreground="#A1A1AA" FontSize="11" FontFamily="Consolas, Courier New" TextWrapping="Wrap" AcceptsReturn="True"/>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

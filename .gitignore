@@ -38,3 +38,18 @@ scratch/
 backup_builds/
 dist_final_v2/
 dist_final_v3/
+
+# --- C# WPF & .NET Build Ignored Folders ---
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+.vs/
+App.config
+
+# --- OMEGA C# Local Runtimes (Heavy binaries) ---
+OmegaTerminal/Resources/node.exe
+OmegaTerminal/Resources/node_modules/
+OmegaTerminal/Resources/Tor/
+OmegaTerminal/Resources/public/
+

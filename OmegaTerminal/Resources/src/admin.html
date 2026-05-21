@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; connect-src 'self' ws: wss:; script-src 'self' blob:; style-src 'self' 'unsafe-inline';">
+    <title>Terminal Admin</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+
+        #login-screen,
+        #admin-dashboard {
+            display: none;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        #login-screen.active,
+        #admin-dashboard.active {
+            display: flex;
+        }
+
+        input,
+        button,
+        select {
+            background: #000;
+            color: #fff;
+            border: 1px solid #fff;
+            padding: 10px;
+            font-family: 'Courier New', Courier, monospace;
+            margin: 5px 0;
+            outline: none;
+        }
+
+        button:hover {
+            background: #fff;
+            color: #000;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            border-color: #555;
+            color: #555;
+            cursor: not-allowed;
+        }
+
+        .file-upload {
+            border: 1px dashed #fff;
+            padding: 20px;
+            text-align: center;
+            margin: 20px 0;
+            cursor: pointer;
+        }
+
+        #layout {
+            display: flex;
+            flex-grow: 1;
+            margin-top: 10px;
+            border: 1px solid #fff;
+            overflow: hidden;
+        }
+
+        #sidebar {
+            width: 300px;
+            border-right: 1px solid #fff;
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+            overflow-y: auto;
+        }
+
+        #main-chat {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+        }
+
+        #messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            border-bottom: 1px dashed #fff;
+            margin-bottom: 10px;
+        }
+
+        .user-item {
+            padding: 5px;
+            border: 1px solid #444;
+            margin-bottom: 5px;
+            cursor: pointer;
+        }
+
+        .user-item:hover {
+            background: #222;
+        }
+
+        .user-item.selected {
+            border-color: #fff;
+            background: #333;
+        }
+
+        #nuke-btn {
+            background: #f00;
+            color: #fff;
+            border: 1px solid #f00;
+            font-weight: bold;
+        }
+
+        #nuke-btn:hover {
+            background: #a00;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="login-screen" class="active">
+        <h2>TERMINAL ADMIN UPLINK</h2>
+        <div class="file-upload" id="pem-upload">
+            CLICK TO SELECT master_private.enc
+            <input type="file" id="file-input" style="display:none;" accept=".enc,.pem">
+        </div>
+        <p id="upload-status"></p>
+        <input type="password" id="passphrase-input" placeholder="> PASSPHRASE..." style="display:none;" autocomplete="off">
+        <button id="auth-btn" disabled>DECRYPT & AUTHENTICATE</button>
+    </div>
+
+    <div id="admin-dashboard">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h2>DASHBOARD [SUPERVISOR]</h2>
+            <button id="nuke-btn">NUKE / PURGE SYSTEM</button>
+        </div>
+        <div id="layout">
+            <div id="sidebar">
+                <h3>USERS</h3>
+                <button id="broadcast-btn">BROADCAST MODE</button>
+                <div id="user-list"></div>
+            </div>
+            <div id="main-chat">
+                <div id="chat-title">MESSAGES: BROADCAST</div>
+                <div id="messages"></div>
+                <div style="display:flex;">
+                    <input type="text" id="msg-input" placeholder="> MESSAGE..." style="flex-grow:1;"
+                        autocomplete="off">
+                    <input type="file" id="zip-upload" accept=".zip" style="display:none;">
+                    <button id="send-zip-btn">+ ZIP</button>
+                    <button id="send-btn">SEND</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('send-zip-btn').addEventListener('click', function () {
+            document.getElementById('zip-upload').click();
+        });
+    </script>
+    <script src="admin-client.js"></script>
+</body>
+
+</html>
