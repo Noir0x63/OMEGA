@@ -196,13 +196,13 @@ namespace OmegaTerminal
             });
         }
 
-        private void BtnCopyOnion_Click(object sender, RoutedEventArgs e)
+        private async void BtnCopyOnion_Click(object sender, RoutedEventArgs e)
         {
             if (!string.IsNullOrEmpty(_onionAddress))
             {
                 try
                 {
-                    // Intentar copiar al portapapeles con reintentos para mitigar errores de bloqueo temporal de Windows (CLIPBRD_E_CANT_OPEN)
+                    // Intentar copiar al portapapeles con reintentos asíncronos para mitigar errores de bloqueo temporal de Windows (CLIPBRD_E_CANT_OPEN)
                     bool copied = false;
                     Exception lastException = null;
                     for (int i = 0; i < 10; i++)
@@ -216,7 +216,7 @@ namespace OmegaTerminal
                         catch (Exception ex)
                         {
                             lastException = ex;
-                            System.Threading.Thread.Sleep(50); // Pequeña espera antes del reintento
+                            await Task.Delay(50); // No bloquea el hilo de la UI, permitiendo procesar mensajes del portapapeles y COM de Windows
                         }
                     }
 
