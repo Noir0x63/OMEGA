@@ -202,7 +202,29 @@ namespace OmegaTerminal
             {
                 try
                 {
-                    Clipboard.SetText(_onionAddress);
+                    // Intentar copiar al portapapeles con reintentos para mitigar errores de bloqueo temporal de Windows (CLIPBRD_E_CANT_OPEN)
+                    bool copied = false;
+                    Exception lastException = null;
+                    for (int i = 0; i < 10; i++)
+                    {
+                        try
+                        {
+                            Clipboard.SetText(_onionAddress);
+                            copied = true;
+                            break;
+                        }
+                        catch (Exception ex)
+                        {
+                            lastException = ex;
+                            System.Threading.Thread.Sleep(50); // Pequeña espera antes del reintento
+                        }
+                    }
+
+                    if (!copied)
+                    {
+                        throw lastException ?? new Exception("Error desconocido al acceder al portapapeles.");
+                    }
+
                     BtnCopyOnion.Content = "¡Dirección Copiada!";
                     var timer = new System.Windows.Threading.DispatcherTimer
                     {
