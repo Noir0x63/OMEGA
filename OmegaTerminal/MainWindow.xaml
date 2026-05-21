@@ -113,14 +113,6 @@
                         <Border Grid.Row="1" Background="#09090B" BorderBrush="#27272A" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,16" VerticalAlignment="Center">
                             <TextBox x:Name="OnionAddressBox" Text="Generando dirección..." IsReadOnly="True" BorderThickness="0" Background="Transparent" Foreground="#FFFFFF" FontSize="13" TextWrapping="Wrap" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" FontWeight="SemiBold" FontFamily="Consolas, Courier New"/>
                         </Border>
-
-                        <Button Grid.Row="2" x:Name="BtnCopyOnion" Content="Copiar Dirección" Click="BtnCopyOnion_Click" Padding="0,10" Background="#F4F4F5" Foreground="#09090B" FontWeight="SemiBold" BorderThickness="0" Cursor="Hand">
-                            <Button.Resources>
-                                <Style TargetType="Border">
-                                    <Setter Property="CornerRadius" Value="6"/>
-                                </Style>
-                            </Button.Resources>
-                        </Button>
                     </Grid>
                 </Border>
 

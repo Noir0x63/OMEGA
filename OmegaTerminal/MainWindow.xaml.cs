@@ -196,54 +196,6 @@ namespace OmegaTerminal
             });
         }
 
-        private async void BtnCopyOnion_Click(object sender, RoutedEventArgs e)
-        {
-            if (!string.IsNullOrEmpty(_onionAddress))
-            {
-                try
-                {
-                    // Intentar copiar al portapapeles con reintentos asíncronos para mitigar errores de bloqueo temporal de Windows (CLIPBRD_E_CANT_OPEN)
-                    bool copied = false;
-                    Exception lastException = null;
-                    for (int i = 0; i < 10; i++)
-                    {
-                        try
-                        {
-                            Clipboard.SetText(_onionAddress);
-                            copied = true;
-                            break;
-                        }
-                        catch (Exception ex)
-                        {
-                            lastException = ex;
-                            await Task.Delay(50); // No bloquea el hilo de la UI, permitiendo procesar mensajes del portapapeles y COM de Windows
-                        }
-                    }
-
-                    if (!copied)
-                    {
-                        throw lastException ?? new Exception("Error desconocido al acceder al portapapeles.");
-                    }
-
-                    BtnCopyOnion.Content = "¡Dirección Copiada!";
-                    var timer = new System.Windows.Threading.DispatcherTimer
-                    {
-                        Interval = TimeSpan.FromSeconds(2)
-                    };
-                    timer.Tick += (s, ev) =>
-                    {
-                        BtnCopyOnion.Content = "Copiar Dirección";
-                        timer.Stop();
-                    };
-                    timer.Start();
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Error al copiar al portapapeles: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
-            }
-        }
-
         private void BtnOpenAdmin_Click(object sender, RoutedEventArgs e)
         {
             if (!string.IsNullOrEmpty(_onionAddress) && !string.IsNullOrEmpty(_adminRoute))
