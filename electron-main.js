@@ -117,7 +117,7 @@ DataDirectory ${torDataDir}
     let torReady = false;
     torProcess.stdout.on('data', (data) => {
         const text = data.toString();
-        console.log('TOR STDOUT:', text.trim());
+
         const match = text.match(/Bootstrapped (\d+)%/);
         if (match) {
             const percent = parseInt(match[1]);
@@ -134,7 +134,6 @@ DataDirectory ${torDataDir}
     });
 
     torProcess.stderr.on('data', (data) => console.error('TOR STDERR:', data.toString().trim()));
-    torProcess.on('exit', (code) => console.log('TOR EXITED WITH CODE:', code));
 }
 
 function finalizeBoot(dataDir) {

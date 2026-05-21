@@ -153,7 +153,7 @@ function initWorker() {
                 } else if (data.type === 'POW_SOLVED') {
                     if (pendingPoWMessage) sendMessageWithPoW(pendingPoWMessage, data.nonce);
                 } else if (data.type === 'ENCRYPT_VAULT_RESULT') {
-                    const obj = { type: 'ASYNC_MSG', user: username, payload: data.payload };
+                    const obj = { type: 'ASYNC_MSG', payload: data.payload };
                     if (pendingPoWChallenge) {
                         pendingPoWMessage = obj;
                         worker.postMessage({ type: 'SOLVE_POW', challenge: pendingPoWChallenge.challenge, difficulty: pendingPoWChallenge.difficulty });

@@ -140,7 +140,7 @@ function saveVault() {
 setInterval(async () => {
     messageVault = [];
     await saveVault();
-    console.log('[SYSTEM] 24-hour automatic vault purge complete.');
+
     if (adminSocket && adminSocket.readyState === 1) {
         try {
             const bytes = Buffer.from(JSON.stringify({ type: 'NEW_MESSAGE', data: { timestamp: Date.now(), content: { type: 'BROADCAST', user: 'SYSTEM', payload: 'VAULT_PURGE_SUCCESSFUL' } } }), 'utf8');
@@ -176,7 +176,8 @@ setInterval(() => {
 
 function hashField(val) {
     if (typeof val !== 'string') return '';
-    const salt = HMAC_SECRET ? crypto.createHash('sha256').update(HMAC_SECRET).digest('hex').slice(0, 16) : 'static_salt';
+    if (!HMAC_SECRET) throw new Error('[SERVER] CRITICAL: Cannot hash field without HMAC_SECRET.');
+    const salt = crypto.createHash('sha256').update(HMAC_SECRET).digest('hex').slice(0, 16);
     return crypto.createHash('sha256').update(String(val) + salt).digest('hex');
 }
 
@@ -483,9 +484,9 @@ wss.on('connection', (ws) => {
 
                 if (!isFromAdmin && (data.targetSession === 'ALL' || data.type === 'BROADCAST')) return;
 
-                if (data.user && typeof data.user === 'string') {
-                    data.user = sanitizeString(data.user, 64);
-                }
+                // Override data.user with the authenticated socket's username to prevent spoofing
+                data.user = isFromAdmin ? 'ADMIN' : ws.username;
+
                 if (data.targetSession && typeof data.targetSession === 'string' && data.targetSession !== 'ALL' && data.targetSession !== 'ADMIN') {
                     if (!validateSessionId(data.targetSession)) return;
                 }

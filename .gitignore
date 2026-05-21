@@ -1,32 +1,44 @@
-# --- ZTAP SYSTEM IGNORE ---
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Dependencies
-node_modules/
-package-lock.json
+# Node
+node_modules
+dist
+dist-ssr
+*.local
 
-# Keys & Secrets (CRITICAL)
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Vite / Vue / React build
+public/
+build/
+
+# ZTAP SYSTEM IGNORE (CRITICAL SECRETS)
 *.enc
 *.pem
 *.key
 admin_token.txt
 ACCESO_ADMIN.txt
 GOLD_HASH.txt
-
-# Databases & Persistence
 vault.json
 *.db
-*.log
 
-# Generated folders
-public/
+# ZTAP Extras
 Tor/
-dist/
-
-# OS/IDE junk
-.DS_Store
-.vscode/
-.idea/
-
-# Testing & Scratch
 test_audit.js
 scratch/
