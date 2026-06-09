@@ -274,7 +274,13 @@ async function connect() {
             }
         } catch (err) { }
     };
-    ws.onclose = () => { clearInterval(attestationInterval); };
+    ws.onclose = () => { 
+        clearInterval(attestationInterval); 
+        const connBtn = document.getElementById('connect-btn');
+        const statusText = document.getElementById('connection-status');
+        if (connBtn) connBtn.disabled = false;
+        if (statusText) statusText.textContent = 'DISCONNECTED. TRY AGAIN.';
+    };
 }
 
 document.getElementById('connect-btn').onclick = () => {
@@ -288,6 +294,12 @@ document.getElementById('connect-btn').onclick = () => {
         const val = document.getElementById('token-value');
         if (display && val) { val.textContent = userToken; display.style.display = 'block'; }
     } else { userToken = tokenInput; }
+
+    const connBtn = document.getElementById('connect-btn');
+    const statusText = document.getElementById('connection-status');
+    if (connBtn) connBtn.disabled = true;
+    if (statusText) statusText.textContent = 'CONNECTING... WAITING FOR OPERATOR E2EE HANDSHAKE...';
+
     connect();
 };
 
