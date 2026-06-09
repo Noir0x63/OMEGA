@@ -597,3 +597,7 @@ module.exports = {
         });
     }
 };
+
+if (require.main === module) {
+    module.exports.start();
+}

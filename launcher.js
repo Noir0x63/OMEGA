@@ -34,7 +34,7 @@ console.log(`${THEME.GREEN}${THEME.BOLD}========================================
 if (!fs.existsSync('master_public.pem') || !fs.existsSync('master_private.enc')) {
     process.stdout.write(`${THEME.BOLD}[!]${THEME.RESET} ${THEME.WHITE}Identity not found. Starting OMEGA KEYGEN...${THEME.RESET}\n\n`);
     try {
-        execSync('node keygen.js', { stdio: 'inherit' });
+        execSync(`"${process.execPath}" keygen.js`, { stdio: 'inherit' });
         process.stdout.write(`\n${THEME.BOLD}[✓]${THEME.RESET} ${THEME.WHITE}Identity generated successfully.${THEME.RESET}\n\n`);
     } catch (e) {
         process.stdout.write(`\n${THEME.BOLD}[ERROR]${THEME.RESET} Failed to generate identity.\n`);
@@ -61,7 +61,7 @@ if (fs.existsSync(torOnionDir)) {
 
 process.stdout.write(`${THEME.GRAY}> Bundling assets and rotating admin routes...${THEME.RESET}\n`);
 try {
-    execSync('node build.js', { stdio: 'pipe' });
+    execSync(`"${process.execPath}" build.js`, { stdio: 'pipe' });
 } catch (e) {
     console.log(`\n${THEME.BOLD}[ERROR]${THEME.RESET} Build failed.`);
     process.exit(1);
@@ -76,7 +76,10 @@ const adminPath = require('crypto').createHmac('sha256', secrets.adminSecret)
 
 console.log(`${THEME.CYAN}${THEME.BOLD}[ADMIN]${THEME.RESET} Active route: /${adminPath}\n`);
 
-const server = spawn('node', ['src/server.js']);
+const server = spawn(process.execPath, ['src/server.js']);
+server.stdout.pipe(process.stdout);
+server.stderr.pipe(process.stderr);
+
 const tor = spawn(path.join(__dirname, 'Tor', 'tor.exe'), ['-f', path.join(__dirname, 'Tor', 'torrc.txt')]);
 
 let torReady = false;
