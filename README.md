@@ -1,6 +1,6 @@
-# 🗲 E2EE-OMEGA-Protocol: Protocolo OMEGA (Zero-Knowledge Terminal Architecture & Protocol)
+# 🗲 Protocolo OMEGA (Zero-Knowledge Terminal Architecture & Protocol)
 
-[![Security: IRONCLAD v3.1](https://img.shields.io/badge/Security-IRONCLAD_v3.1-brightgreen.svg)](https://github.com/Noir0x63/E2EE-OMEGA-Protocol)
+[![Security: IRONCLAD v3.1](https://img.shields.io/badge/Security-IRONCLAD_v3.1-brightgreen.svg)](https://github.com/Noir0x63/OMEGA)
 [![Encryption: AES--256--GCM](https://img.shields.io/badge/Encryption-AES--256--GCM-blue.svg)]()
 [![PFS: ECDH--P256](https://img.shields.io/badge/PFS-ECDH--P256-blue.svg)]()
 [![Network: Tor--Only](https://img.shields.io/badge/Network-Tor--Only-blueviolet.svg)]()
@@ -195,3 +195,4 @@ Protocolo OMEGA is built on the principle of **Attack Cost Maximization**. By co
 
 ---
 **Developed and Hardened by Eduardo "Noir0x63" Camarillo** 🔒🎩
+🌐 [noir0x63.github.io](https://noir0x63.github.io)
